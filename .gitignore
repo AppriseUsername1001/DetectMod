@@ -1,0 +1,5 @@
+bin/
+obj/
+*.user
+eveaa_mod_settings.json
+data/*.json

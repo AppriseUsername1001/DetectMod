@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>EVEAA_mod</AssemblyName>
+    <RootNamespace>EVEAA.Mod</RootNamespace>
+    <Version>2.26.5</Version>
+    <FileVersion>2.26.5.0</FileVersion>
+    <Product>EVEAA Mod</Product>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- exe 하나만 배포해도 실행되도록: .NET 런타임까지 포함한 단일 파일로 게시 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- EVEAA 원본 data/ 와 충돌 방지 → eveaa_mod_data/ -->
+    <Content Include="data\Systems.dat" Link="eveaa_mod_data\Systems.dat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="data\MapLayout.dat" Link="eveaa_mod_data\MapLayout.dat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="data\Ships.txt" Link="eveaa_mod_data\Ships.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="data\ShipAliases.txt" Link="eveaa_mod_data\ShipAliases.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="sound\pop.wav" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- exe 하나만 받아도 독립 실행되도록: 원본 EVEAA exe + 데이터/사운드를 어셈블리에 내장하고
+         첫 실행 시 %LocalAppData%\EVEDetectmod 로 자동 추출한다 (BundledAssets.cs 참고). -->
+    <EmbeddedResource Include="Bundled\EVEAA v2.26.exe" LogicalName="Bundled.EveaaOriginal.exe" />
+    <EmbeddedResource Include="Bundled\BEEP.wav" LogicalName="Bundled.Sound.Beep.wav" />
+    <EmbeddedResource Include="Bundled\Clink.wav" LogicalName="Bundled.Sound.Clink.wav" />
+    <EmbeddedResource Include="sound\pop.wav" LogicalName="Bundled.Sound.Pop.wav" />
+    <EmbeddedResource Include="data\Systems.dat" LogicalName="Bundled.Data.Systems.dat" />
+    <EmbeddedResource Include="data\MapLayout.dat" LogicalName="Bundled.Data.MapLayout.dat" />
+    <EmbeddedResource Include="data\Ships.txt" LogicalName="Bundled.Data.Ships.txt" />
+    <EmbeddedResource Include="data\ShipAliases.txt" LogicalName="Bundled.Data.ShipAliases.txt" />
+  </ItemGroup>
+</Project>
