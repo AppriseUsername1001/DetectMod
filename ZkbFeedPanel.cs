@@ -317,22 +317,29 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	{
 		if (IsDisposed || !_list.IsHandleCreated || _list.Items.Count == 0) return;
 		_list.BeginUpdate();
+		bool hadError = false;
 		try
 		{
 			for (int i = 0; i < _list.Items.Count; i++)
 			{
-				if (_list.Items[i].Tag is not ZkbLossEvent ev) continue;
-				string j = FormatJumps(ev.SystemName);
-				if (_list.Items[i].SubItems.Count > 2 && _list.Items[i].SubItems[2].Text != j)
-					_list.Items[i].SubItems[2].Text = j;
+				// 행 하나가 실패해도 나머지 행은 계속 갱신 — 통째로 중단하면 그 뒤 행들이
+				// 다음 틱까지 이전 상태(또는 빈 값) 그대로 남아 흰 얼룩처럼 보인다.
+				try
+				{
+					if (_list.Items[i].Tag is not ZkbLossEvent ev) continue;
+					string j = FormatJumps(ev.SystemName);
+					if (_list.Items[i].SubItems.Count > 2 && _list.Items[i].SubItems[2].Text != j)
+						_list.Items[i].SubItems[2].Text = j;
+				}
+				catch (Exception) { hadError = true; }
 			}
 		}
-		// 원본 창에 재부착/재생성되는 타이밍과 겹치면 네이티브 리스트뷰 상태가 일시적으로
-		// 어긋나 있을 수 있다 — 이번 틱만 건너뛰고 다음 틱에 다시 시도(2초 후 자동 복구).
-		catch (Exception) { }
 		finally
 		{
 			_list.EndUpdate();
+			// 원본 창에 재부착되는 타이밍과 겹치는 등 네이티브 리스트뷰 상태가 일시적으로
+			// 어긋났던 경우 — EndUpdate만으로는 화면이 완전히 갱신되지 않을 수 있어 강제 재도색.
+			if (hadError) _list.Invalidate();
 		}
 	}
 
@@ -343,34 +350,41 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		// 여러 행/필드가 한 틱에 같이 바뀔 때 낱개로 리페인트되며 잠깐씩 깜빡이는 것을 방지 —
 		// BeginUpdate~EndUpdate 사이 변경은 EndUpdate 시점에 한 번만 다시 그려진다.
 		_list.BeginUpdate();
+		bool hadError = false;
 		try
 		{
 			for (int i = 0; i < _list.Items.Count; i++)
 			{
-				if (_list.Items[i].Tag is not ZkbLossEvent ev) continue;
-				string t = FormatAgo(ev.KillTimeUtc);
-				string j = FormatJumps(ev.SystemName);
-				string a = ResolveAlliance(ev);
-				string s = ResolveShip(ev);
-				if (_list.Items[i].SubItems[0].Text != t)
-					_list.Items[i].SubItems[0].Text = t;
-				if (_list.Items[i].SubItems.Count > 2 && _list.Items[i].SubItems[2].Text != j)
-					_list.Items[i].SubItems[2].Text = j;
-				if (_list.Items[i].SubItems.Count > 3 && _list.Items[i].SubItems[3].Text != a)
-					_list.Items[i].SubItems[3].Text = a;
-				if (_list.Items[i].SubItems.Count > 4 && _list.Items[i].SubItems[4].Text != s)
-					_list.Items[i].SubItems[4].Text = s;
-				Color desired = RowBackColor(ev);
-				if (_list.Items[i].BackColor != desired)
-					_list.Items[i].BackColor = desired;
+				// 행 하나가 실패해도 나머지 행은 계속 갱신 — 통째로 중단하면 그 뒤 행들이
+				// 다음 틱까지 이전 상태(또는 빈 값) 그대로 남아 흰 얼룩처럼 보인다.
+				try
+				{
+					if (_list.Items[i].Tag is not ZkbLossEvent ev) continue;
+					string t = FormatAgo(ev.KillTimeUtc);
+					string j = FormatJumps(ev.SystemName);
+					string a = ResolveAlliance(ev);
+					string s = ResolveShip(ev);
+					if (_list.Items[i].SubItems[0].Text != t)
+						_list.Items[i].SubItems[0].Text = t;
+					if (_list.Items[i].SubItems.Count > 2 && _list.Items[i].SubItems[2].Text != j)
+						_list.Items[i].SubItems[2].Text = j;
+					if (_list.Items[i].SubItems.Count > 3 && _list.Items[i].SubItems[3].Text != a)
+						_list.Items[i].SubItems[3].Text = a;
+					if (_list.Items[i].SubItems.Count > 4 && _list.Items[i].SubItems[4].Text != s)
+						_list.Items[i].SubItems[4].Text = s;
+					Color desired = RowBackColor(ev);
+					if (_list.Items[i].BackColor != desired)
+						_list.Items[i].BackColor = desired;
+				}
+				catch (Exception) { hadError = true; }
 			}
 		}
-		// 원본 창에 재부착/재생성되는 타이밍과 겹치면 네이티브 리스트뷰 상태가 일시적으로
-		// 어긋나 있을 수 있다 — 이번 틱만 건너뛰고 다음 틱에 다시 시도(2초 후 자동 복구).
-		catch (Exception) { }
 		finally
 		{
 			_list.EndUpdate();
+			// 원본 창에 재부착되는 타이밍과 겹치는 등 네이티브 리스트뷰 상태가 일시적으로
+			// 어긋났던 경우 — EndUpdate만으로는 화면이 완전히 갱신되지 않을 수 있어 강제 재도색.
+			if (hadError) _list.Invalidate();
 		}
 	}
 
