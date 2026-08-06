@@ -7,6 +7,15 @@ internal abstract class NativeChildForm : Form
 {
 	private bool _parented;
 	private IntPtr _hostParent = IntPtr.Zero;
+	// PlaceInParent()의 "이미 그 자리다" 판단을 위해 우리가 직접 마지막으로 배치한 좌표를
+	// 별도로 기억한다. Location/Width/Height(WinForms 프로퍼티)를 대신 읽으면 안 되는 이유:
+	// CreateHandle()을 직접 호출해 정상 Show()/CreateControl() 생명주기를 우회하는 이 창들에서는
+	// 그 값들이 실제로 반영된 위치를 계속 반영하지 않는 경우가 관측됨 — 진단 로그에서
+	// ZkbFeedPanel이 동일한 목표 좌표로 매 Sync() 틱(200ms)마다 몇 초씩 계속 "실제" SetWindowPos를
+	// 반복 실행하는 게 확인됐고(prevBounds가 한 번도 안 바뀜), 이게 곧 ZKB 목록 행이 계속
+	// 깜빡이는 원인으로 보인다.
+	private bool _hasPlaced;
+	private int _placedX, _placedY, _placedW, _placedH;
 
 	protected NativeChildForm()
 	{
@@ -96,7 +105,7 @@ internal abstract class NativeChildForm : Form
 
 		bool wantShow = visible;
 		bool isShown = IsWindowVisible(Handle);
-		bool sameBounds = Location.X == x && Location.Y == y && Width == w && Height == h;
+		bool sameBounds = _hasPlaced && _placedX == x && _placedY == y && _placedW == w && _placedH == h;
 		// 크기·표시 동일하면 SetWindowPos 생략 — 인텔 로그 점멸 방지
 		if (!force && sameBounds && wantShow == isShown && isShown)
 			return;
@@ -107,9 +116,15 @@ internal abstract class NativeChildForm : Form
 			return;
 		}
 
+		DiagLog.Write($"{GetType().Name}.PlaceInParent REAL SetWindowPos x={x} y={y} w={w} h={h} force={force} sameBounds={sameBounds} prevPlaced=({(_hasPlaced ? $"{_placedX},{_placedY},{_placedW},{_placedH}" : "none")})");
 		IntPtr z = bringToFront ? HWND_TOP : HWND_BOTTOM;
 		uint flags = SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW;
 		SetWindowPos(Handle, z, x, y, w, h, flags);
+		_hasPlaced = true;
+		_placedX = x;
+		_placedY = y;
+		_placedW = w;
+		_placedH = h;
 
 		SuspendLayout();
 		try
@@ -143,6 +158,7 @@ internal abstract class NativeChildForm : Form
 		if (!_parented)
 			return;
 
+		DiagLog.Write($"{GetType().Name}.HideInParent REAL (was parented)");
 		ShowWindow(Handle, SW_HIDE);
 
 		int style = GetWindowLong(Handle, GWL_STYLE);
