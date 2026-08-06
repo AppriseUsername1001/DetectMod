@@ -35,13 +35,19 @@ internal abstract class NativeChildForm : Form
 		if (justCreated)
 			CreateHandle();
 
-		// CreateHandle()을 직접 호출하는 경로는 Show()/CreateControl()이 도는 정상 경로를
-		// 거치지 않아 AutoScaleMode의 DPI 스케일링이 자동으로 걸리지 않는다 — 명시적으로 트리거.
-		if (justCreated)
-			PerformAutoScale();
-
 		_hostParent = parentHwnd;
 		ReparentToHost();
+
+		// CreateHandle()을 직접 호출하는 경로는 Show()/CreateControl()이 도는 정상 경로를
+		// 거치지 않아 AutoScaleMode의 DPI 스케일링이 자동으로 걸리지 않는다 — 명시적으로 트리거.
+		// 반드시 ReparentToHost() 이후(실제 모니터에 얹힌 뒤)에 호출해야 한다 — CreateHandle()
+		// 직후처럼 아직 어디에도 붙지 않은 시점에 호출하면 DeviceDpi가 0/미확정 값으로 계산되어
+		// 배율이 0이 되면서 모든 자식 컨트롤(버튼/라벨/리스트)이 그대로 사라지는 심각한 회귀가
+		// 있었다(1.14 — 43인치 TV처럼 특정 디스플레이 환경에서만 재현). DeviceDpi가 정상 범위가
+		// 아니면 스케일링을 아예 건너뛴다 — 배율이 안 맞는 것보다 아예 안 보이는 게 훨씬 나쁘다.
+		if (justCreated && DeviceDpi >= 96 && DeviceDpi <= 480)
+			PerformAutoScale();
+
 		// WinForms Visible과 HWND 표시 상태를 맞춤 (안 맞으면 이후 레이아웃이 숨김으로 남음)
 		Visible = true;
 	}
