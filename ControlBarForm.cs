@@ -291,6 +291,22 @@ internal sealed class ControlBarForm : Form
 			if (ny + nh > topH)
 				nh = Math.Max(10, topH - ny);
 			if (nw < 10 || nh < 10) continue;
+
+			// 이미 목표 위치·크기·표시 상태 그대로면 SetWindowPos 생략 —
+			// 경보기 탭에서 매 200ms 무조건 재적용하면 다른 창에 포커스가 가 있을 때
+			// 컴포지터 경합으로 ZKB feed가 점멸하는 원인이 됨 (변경 없을 땐 손대지 않기)
+			bool unchanged = false;
+			if (GetWindowRect(o.hwnd, out RECT wr))
+			{
+				POINT pt = new() { X = wr.Left, Y = wr.Top };
+				ScreenToClient(_targetHwnd, ref pt);
+				int cw = wr.Right - wr.Left;
+				int ch = wr.Bottom - wr.Top;
+				unchanged = pt.X == nx && pt.Y == ny && cw == nw && ch == nh && IsWindowVisible(o.hwnd);
+			}
+			if (unchanged)
+				continue;
+
 			ShowWindow(o.hwnd, SW_SHOW);
 			SetWindowPos(o.hwnd, IntPtr.Zero, nx, ny, nw, nh,
 				SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
