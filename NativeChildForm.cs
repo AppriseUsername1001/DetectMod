@@ -17,7 +17,12 @@ internal abstract class NativeChildForm : Form
 		MinimizeBox = false;
 		ControlBox = false;
 		TopMost = false;
-		AutoScaleMode = AutoScaleMode.None;
+		// 96 DPI(100%) 기준으로 설계된 자식 컨트롤(버튼/라벨/컬럼폭 등)을 실제 모니터 배율에 맞게
+		// 자동으로 스케일링 — 사용자마다 디스플레이 배율이 달라 글자가 잘려 보이던 문제 수정.
+		// 이 창 자체를 원본 EVEAA 좌표에 픽셀 단위로 배치하는 로직(PlaceInParent)은 외부에서
+		// 별도로 제어되므로 이 설정과 충돌하지 않는다.
+		AutoScaleMode = AutoScaleMode.Dpi;
+		AutoScaleDimensions = new SizeF(96f, 96f);
 		KeyPreview = true;
 	}
 

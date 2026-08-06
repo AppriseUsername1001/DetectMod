@@ -17,10 +17,13 @@ internal sealed class IntelLogView : Control
 	private static readonly Color ColAlert = Color.FromArgb(180, 40, 40);
 	private static readonly Color ColClear = Color.FromArgb(0, 140, 70);
 
-	private const int PadX = 4;
-	private const int PadY = 2;
-	private const int LineGap = 2;
 	private const int MaxItems = 400;
+
+	// 96 DPI 기준 여백 — 실제 모니터 배율에 맞춰 스케일링 (고배율 화면에서 줄간격이
+	// 상대적으로 너무 좁아 보이는 것 방지). Font는 GDI에서 이미 DPI에 맞게 렌더링되므로 손대지 않는다.
+	private int PadX => (int)Math.Round(4 * DeviceDpi / 96.0);
+	private int PadY => (int)Math.Round(2 * DeviceDpi / 96.0);
+	private int LineGap => (int)Math.Round(2 * DeviceDpi / 96.0);
 	private const int WM_MOUSEWHEEL = 0x020A;
 	private const int WM_ERASEBKGND = 0x0014;
 

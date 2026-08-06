@@ -150,6 +150,8 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			_list.Invalidate();
 		};
 		_list.DoubleClick += (_, _) => OpenKill(_clickIndex);
+		// 휠로 스크롤한 직후에도 클릭 때와 같은 흰 얼룩이 남는 경우가 있어 동일하게 강제 재그리기.
+		_list.MouseWheel += (_, _) => _list.Invalidate();
 		_list.Resize += (_, _) => LayoutColumns();
 
 		inner.Controls.Add(_list);
