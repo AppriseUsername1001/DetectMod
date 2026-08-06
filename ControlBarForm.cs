@@ -115,6 +115,55 @@ internal sealed class ControlBarForm : Form
 		// 원본 EVEAA 2.26처럼 X/닫기는 트레이 숨김 없이 본문 창이 그대로 동작
 		_trayService?.Dispose();
 		_trayService = null;
+
+		// 부착 직후 UI가 안정된 뒤 조용히 한 번만 업데이트 확인 (시작을 지연시키지 않도록 지연 실행)
+		_ = DelayedUpdateCheckAsync();
+	}
+
+	private async Task DelayedUpdateCheckAsync()
+	{
+		await Task.Delay(4000);
+		try { await CheckForUpdateAsync(); } catch { }
+	}
+
+	/// <summary>GitHub 최신 릴리스와 비교해 새 버전이 있으면 물어보고, 동의 시 받아서 재실행한다.</summary>
+	private async Task CheckForUpdateAsync()
+	{
+		UpdateChecker.UpdateInfo? info = await UpdateChecker.CheckAsync();
+		if (info is null)
+			return;
+
+		DialogResult choice = MessageBox.Show(this,
+			$"새 버전이 있습니다 ({ModVersion.Current} → {info.Version}).\n지금 업데이트할까요?",
+			"EVEDetectmod 업데이트",
+			MessageBoxButtons.YesNo,
+			MessageBoxIcon.Information);
+		if (choice != DialogResult.Yes)
+			return;
+
+		using var progress = new UpdateProgressForm();
+		progress.Show(this);
+		try
+		{
+			string dir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+			string destPath = Path.Combine(dir, $"EVEDetectmod {info.Version}.exe");
+			await UpdateChecker.DownloadAsync(info.DownloadUrl, destPath);
+
+			Process.Start(new ProcessStartInfo
+			{
+				FileName = destPath,
+				WorkingDirectory = dir,
+				UseShellExecute = true
+			});
+			progress.Close();
+			Close();
+		}
+		catch (Exception ex)
+		{
+			progress.Close();
+			MessageBox.Show(this, "업데이트에 실패했습니다: " + ex.Message,
+				"EVEDetectmod 업데이트", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+		}
 	}
 
 	/// <summary>좌·우(·인텔) 패널을 부모 클라이언트에 즉시 배치·표시. 부모 숨김 중에도 동작.</summary>
