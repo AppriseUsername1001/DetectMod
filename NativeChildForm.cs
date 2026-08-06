@@ -31,8 +31,14 @@ internal abstract class NativeChildForm : Form
 		if (parentHwnd == IntPtr.Zero)
 			return;
 
-		if (!IsHandleCreated)
+		bool justCreated = !IsHandleCreated;
+		if (justCreated)
 			CreateHandle();
+
+		// CreateHandle()을 직접 호출하는 경로는 Show()/CreateControl()이 도는 정상 경로를
+		// 거치지 않아 AutoScaleMode의 DPI 스케일링이 자동으로 걸리지 않는다 — 명시적으로 트리거.
+		if (justCreated)
+			PerformAutoScale();
 
 		_hostParent = parentHwnd;
 		ReparentToHost();

@@ -237,6 +237,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					ForeColor = ev.IsNpc ? Color.FromArgb(120, 120, 120) : Color.FromArgb(30, 30, 30),
 					BackColor = RowBackColor(ev)
 				};
+				if (!_list.IsHandleCreated) return;
 				// BeginUpdate/EndUpdate로 감싸지 않으면 맨 위 삽입 + 아래쪽 트림이 두 번의
 				// 별도 리페인트로 나뉘어 처리되면서, 그 사이에 새/밀린 행이 빈 텍스트로
 				// 잠깐 그려지는 경우가 있다 (2초 뒤 RefreshNames가 채울 때까지 깜빡여 보임).
@@ -246,6 +247,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					_list.Items.Insert(0, item);
 					while (_list.Items.Count > 300) _list.Items.RemoveAt(_list.Items.Count - 1);
 				}
+				catch (Exception) { }
 				finally
 				{
 					_list.EndUpdate();
@@ -313,7 +315,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 
 	private void RefreshJumps()
 	{
-		if (_list.Items.Count == 0) return;
+		if (IsDisposed || !_list.IsHandleCreated || _list.Items.Count == 0) return;
 		_list.BeginUpdate();
 		try
 		{
@@ -325,6 +327,9 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					_list.Items[i].SubItems[2].Text = j;
 			}
 		}
+		// 원본 창에 재부착/재생성되는 타이밍과 겹치면 네이티브 리스트뷰 상태가 일시적으로
+		// 어긋나 있을 수 있다 — 이번 틱만 건너뛰고 다음 틱에 다시 시도(2초 후 자동 복구).
+		catch (Exception) { }
 		finally
 		{
 			_list.EndUpdate();
@@ -334,7 +339,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	/// <summary>2초 타이머: 이름 캐시 반영 + "N분 전" 갱신 + 얼라이언스 색 재적용(색상 설정 변경 시).</summary>
 	private void RefreshNames()
 	{
-		if (_list.Items.Count == 0) return;
+		if (IsDisposed || !_list.IsHandleCreated || _list.Items.Count == 0) return;
 		// 여러 행/필드가 한 틱에 같이 바뀔 때 낱개로 리페인트되며 잠깐씩 깜빡이는 것을 방지 —
 		// BeginUpdate~EndUpdate 사이 변경은 EndUpdate 시점에 한 번만 다시 그려진다.
 		_list.BeginUpdate();
@@ -360,6 +365,9 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					_list.Items[i].BackColor = desired;
 			}
 		}
+		// 원본 창에 재부착/재생성되는 타이밍과 겹치면 네이티브 리스트뷰 상태가 일시적으로
+		// 어긋나 있을 수 있다 — 이번 틱만 건너뛰고 다음 틱에 다시 시도(2초 후 자동 복구).
+		catch (Exception) { }
 		finally
 		{
 			_list.EndUpdate();
