@@ -136,6 +136,12 @@ internal abstract class NativeChildForm : Form
 	{
 		if (!IsHandleCreated)
 			return;
+		// 이미 떼어낸 상태면 아무 것도 하지 않는다 — 경보기 뷰에서는 매 200ms틱마다
+		// SetVisible(false)가 호출되는데, 매번 SetParent/SetWindowLong/SetWindowPos를
+		// 무조건 다시 실행하면(1.12/1.16에서 고친 것과 같은 패턴) 다른 창에 포커스가
+		// 가 있을 때 컴포지터 경합으로 ZKB feed 등 형제 창이 점멸하는 원인이 된다.
+		if (!_parented)
+			return;
 
 		ShowWindow(Handle, SW_HIDE);
 

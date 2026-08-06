@@ -412,7 +412,11 @@ internal sealed class ControlBarForm : Form
 		{
 			if (GetParent(hwnd) != _targetHwnd || _ourHandles.Contains(hwnd))
 				return true;
-			ShowWindow(hwnd, SW_HIDE);
+			// 인텔 탭에서는 매 200ms틱마다 호출된다 — 이미 숨겨진 창까지 무조건 다시
+			// ShowWindow(SW_HIDE)하면(1.12에서 RestoreOriginalChildren에 적용한 것과 같은
+			// 패턴) 다른 창에 포커스가 가 있을 때 컴포지터 경합으로 ZKB feed가 점멸한다.
+			if (IsWindowVisible(hwnd))
+				ShowWindow(hwnd, SW_HIDE);
 			return true;
 		}, IntPtr.Zero);
 	}
