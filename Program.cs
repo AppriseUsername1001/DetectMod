@@ -252,10 +252,46 @@ internal static class Program
 			using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
 				@"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers");
 			string existing = key.GetValue(full) as string ?? "";
-			if (existing.Contains("HIGHDPIAWARE", StringComparison.OrdinalIgnoreCase))
-				return;
-			string updated = string.IsNullOrWhiteSpace(existing) ? "~ HIGHDPIAWARE" : existing.TrimEnd() + " HIGHDPIAWARE";
-			key.SetValue(full, updated);
+			if (!existing.Contains("HIGHDPIAWARE", StringComparison.OrdinalIgnoreCase))
+			{
+				string updated = string.IsNullOrWhiteSpace(existing) ? "~ HIGHDPIAWARE" : existing.TrimEnd() + " HIGHDPIAWARE";
+				key.SetValue(full, updated);
+			}
+		}
+		catch { }
+
+		// 위 레지스트리 호환성 플래그가 일부 환경(임베디드/축소판 Windows 등)에서 전혀
+		// 먹히지 않는 경우가 있어(스마트 TV 사용자 보고로 확인) 별도 경로로 한 번 더 시도한다.
+		// exe에 내장 매니페스트가 아예 없는 걸 직접 확인했으므로(FindResource 실패) —
+		// exe 옆에 "<exe이름>.manifest" 외부 파일을 두면 Windows가 대신 읽는다.
+		// 바이너리에 직접 매니페스트 리소스를 주입하는 방법도 시도해봤지만 .NET 런타임이
+		// 즉시 깨졌다(직접 확인) — 절대 그 방식은 쓰지 말 것. 이 방식은 exe를 전혀 건드리지
+		// 않아 안전하다.
+		try
+		{
+			string full = Path.GetFullPath(exePath);
+			string manifestPath = full + ".manifest";
+			if (!File.Exists(manifestPath))
+			{
+				File.WriteAllText(manifestPath,
+					"""
+					<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+					<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+					  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+					    <security>
+					      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+					        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+					      </requestedPrivileges>
+					    </security>
+					  </trustInfo>
+					  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+					    <windowsSettings>
+					      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
+					    </windowsSettings>
+					  </application>
+					</assembly>
+					""");
+			}
 		}
 		catch { }
 	}
