@@ -25,7 +25,7 @@ internal sealed class AutoRunPanel : NativeChildForm
 		{
 			AutoSize = false,
 			Text = "EVE\n자동실행",
-			Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
 			ForeColor = Color.FromArgb(40, 40, 40),
 			TextAlign = ContentAlignment.MiddleCenter,
 			Size = new Size(WidthPx - 8, 40)
@@ -34,7 +34,7 @@ internal sealed class AutoRunPanel : NativeChildForm
 		_btnToggle = new Label
 		{
 			Size = new Size(56, 32),
-			Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
 			Cursor = Cursors.Hand,
 			TabStop = false,
 			TextAlign = ContentAlignment.MiddleCenter,
@@ -49,7 +49,7 @@ internal sealed class AutoRunPanel : NativeChildForm
 		_statusLabel = new Label
 		{
 			AutoSize = false,
-			Font = new Font("Segoe UI", 7.5f),
+			Font = new Font("맑은 고딕", 7.5f),
 			TextAlign = ContentAlignment.TopCenter,
 			Size = new Size(WidthPx - 8, 36)
 		};

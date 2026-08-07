@@ -244,7 +244,7 @@ internal sealed class RegionMapControl : Control
 
 		if (_region is null || _region.Systems.Count == 0)
 		{
-			using var f = new Font("Segoe UI", 9f);
+			using var f = new Font("맑은 고딕", 9f);
 			string msg = string.IsNullOrEmpty(_currentSystem)
 				? "지도 없음 (캐릭터 위치 대기)"
 				: $"지도 없음\n{_currentSystem}\n(MapLayout.dat 로드 확인)";
@@ -347,8 +347,8 @@ internal sealed class RegionMapControl : Control
 	private void DrawHoverLabel(Graphics g, string name, Point cursor)
 	{
 		List<string> reasons = GetReasonsForHover(name);
-		using var headerFont = new Font("Segoe UI", 9f, FontStyle.Bold);
-		using var bodyFont = new Font("Segoe UI", 8f);
+		using var headerFont = new Font("맑은 고딕", 9f, FontStyle.Bold);
+		using var bodyFont = new Font("맑은 고딕", 8f);
 		const int maxBodyWidth = 300;
 		const int padX = 8, padY = 6, lineGap = 2, headerGap = 4;
 

@@ -53,7 +53,7 @@ internal sealed class RegionMapOverlayForm : Form
 			Dock = DockStyle.Fill,
 			TextAlign = ContentAlignment.MiddleCenter,
 			ForeColor = Color.White,
-			Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 9.5f, FontStyle.Bold),
 			Text = "-"
 		};
 		_btnPin = new Button
@@ -65,7 +65,7 @@ internal sealed class RegionMapOverlayForm : Form
 			ForeColor = Color.Gainsboro,
 			BackColor = Color.FromArgb(36, 36, 40),
 			Cursor = Cursors.Hand,
-			Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 7.5f, FontStyle.Bold),
 			TabStop = false
 		};
 		_btnPin.FlatAppearance.BorderSize = 0;
@@ -78,7 +78,7 @@ internal sealed class RegionMapOverlayForm : Form
 			ForeColor = Color.White,
 			BackColor = Color.FromArgb(36, 36, 40),
 			Cursor = Cursors.Hand,
-			Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
 			TabStop = false
 		};
 		_btnClose.FlatAppearance.BorderSize = 0;
@@ -92,7 +92,7 @@ internal sealed class RegionMapOverlayForm : Form
 			ForeColor = Color.Gainsboro,
 			BackColor = Color.FromArgb(36, 36, 40),
 			Cursor = Cursors.Hand,
-			Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 7.5f, FontStyle.Bold),
 			TabStop = false
 		};
 		_btnSettings.FlatAppearance.BorderSize = 0;

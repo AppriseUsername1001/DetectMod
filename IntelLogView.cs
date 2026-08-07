@@ -47,7 +47,7 @@ internal sealed class IntelLogView : Control
 		DoubleBuffered = true;
 		BackColor = Color.White;
 		TabStop = true;
-		Font = new Font("Segoe UI", 9.5f);
+		Font = new Font("맑은 고딕", 9.5f);
 
 		_scroll = new VScrollBar
 		{

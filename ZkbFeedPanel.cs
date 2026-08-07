@@ -42,7 +42,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			Dock = DockStyle.Right,
 			Width = 44,
 			FlatStyle = FlatStyle.Flat,
-			Font = new Font("Segoe UI", 7.5f),
+			Font = new Font("맑은 고딕", 7.5f),
 			ForeColor = Color.FromArgb(70, 70, 70),
 			Cursor = Cursors.Hand,
 			TabStop = false
@@ -55,7 +55,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			Dock = DockStyle.Right,
 			Width = 84,
 			FlatStyle = FlatStyle.Flat,
-			Font = new Font("Segoe UI", 7.5f),
+			Font = new Font("맑은 고딕", 7.5f),
 			ForeColor = Color.FromArgb(70, 70, 70),
 			Cursor = Cursors.Hand,
 			TabStop = false
@@ -72,7 +72,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			Dock = DockStyle.Fill,
 			TextAlign = ContentAlignment.MiddleLeft,
 			ForeColor = Color.FromArgb(110, 110, 110),
-			Font = new Font("Segoe UI", 8f)
+			Font = new Font("맑은 고딕", 8f)
 		};
 		var sub = new Panel { Dock = DockStyle.Top, Height = 22 };
 		sub.Controls.Add(_status);
@@ -84,7 +84,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			Width = 74,
 			AutoEllipsis = false,
 			TextAlign = ContentAlignment.MiddleLeft,
-			Font = new Font("Segoe UI", 7.5f),
+			Font = new Font("맑은 고딕", 7.5f),
 			ForeColor = Color.FromArgb(80, 80, 80)
 		};
 		_volumePercentLabel = new Label
@@ -93,7 +93,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			Dock = DockStyle.Right,
 			Width = 34,
 			TextAlign = ContentAlignment.MiddleRight,
-			Font = new Font("Segoe UI", 7.5f),
+			Font = new Font("맑은 고딕", 7.5f),
 			ForeColor = Color.FromArgb(80, 80, 80)
 		};
 		_volumeTrack = new TrackBar
@@ -129,7 +129,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			MultiSelect = false,
 			HeaderStyle = ColumnHeaderStyle.Nonclickable,
 			BorderStyle = BorderStyle.None,
-			Font = new Font("Segoe UI", 9f),
+			Font = new Font("맑은 고딕", 9f),
 			HideSelection = true
 		};
 		_list.Columns.Add("Time", 60);

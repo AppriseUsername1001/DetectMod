@@ -79,7 +79,7 @@ internal sealed class SideNavPanel : NativeChildForm
 		{
 			Text = text,
 			FlatStyle = FlatStyle.Flat,
-			Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
 			TextAlign = ContentAlignment.MiddleCenter,
 			Cursor = Cursors.Hand,
 			TabStop = false,

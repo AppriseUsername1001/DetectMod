@@ -208,7 +208,7 @@ internal sealed class IntelPanel : NativeChildForm
 		var title = new Label
 		{
 			Text = "EVE 로그인",
-			Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 12f, FontStyle.Bold),
 			AutoSize = true,
 			Location = new Point(16, 24)
 		};
@@ -220,7 +220,7 @@ internal sealed class IntelPanel : NativeChildForm
 			FlatStyle = FlatStyle.Flat,
 			BackColor = Color.FromArgb(60, 120, 200),
 			ForeColor = Color.White,
-			Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
 			Cursor = Cursors.Hand
 		};
 		btn.FlatAppearance.BorderSize = 0;
@@ -231,7 +231,7 @@ internal sealed class IntelPanel : NativeChildForm
 		var hint = new Label
 		{
 			Dock = DockStyle.Fill,
-			Font = new Font("Segoe UI", 10f),
+			Font = new Font("맑은 고딕", 10f),
 			ForeColor = Color.FromArgb(50, 50, 50),
 			Text =
 				"감시 대상이 될 캐릭터로 로그인해 주세요.\n\n" +
@@ -280,14 +280,14 @@ internal sealed class IntelPanel : NativeChildForm
 		{
 			Dock = DockStyle.Top,
 			Height = 22,
-			Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
 			TextAlign = ContentAlignment.MiddleCenter,
 			Text = "-"
 		};
 		_locLabel = new Label
 		{
 			Dock = DockStyle.Fill,
-			Font = new Font("Segoe UI", 8f),
+			Font = new Font("맑은 고딕", 8f),
 			TextAlign = ContentAlignment.TopCenter,
 			ForeColor = Color.FromArgb(40, 40, 40),
 			Padding = new Padding(2, 0, 2, 0),
@@ -304,7 +304,7 @@ internal sealed class IntelPanel : NativeChildForm
 			Dock = DockStyle.Fill,
 			FlatStyle = FlatStyle.Flat,
 			Margin = Padding.Empty,
-			Font = new Font("Segoe UI", 8.5f),
+			Font = new Font("맑은 고딕", 8.5f),
 			TabStop = false
 		};
 		logout.FlatAppearance.BorderSize = 0;
@@ -330,7 +330,7 @@ internal sealed class IntelPanel : NativeChildForm
 			FlatStyle = FlatStyle.Flat,
 			Margin = Padding.Empty,
 			Cursor = Cursors.Hand,
-			Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
 			BackColor = Color.FromArgb(235, 245, 255),
 			TabStop = false
 		};
@@ -351,7 +351,7 @@ internal sealed class IntelPanel : NativeChildForm
 			FlatStyle = FlatStyle.Flat,
 			Margin = Padding.Empty,
 			Cursor = Cursors.Hand,
-			Font = new Font("Segoe UI", 8.5f),
+			Font = new Font("맑은 고딕", 8.5f),
 			TabStop = false
 		};
 		mapSetBtn.FlatAppearance.BorderSize = 0;
@@ -520,7 +520,7 @@ internal sealed class IntelPanel : NativeChildForm
 			Location = new Point(4, 156),
 			Size = new Size(236, 28),
 			ForeColor = Color.FromArgb(80, 80, 80),
-			Font = new Font("Segoe UI", 7.5f)
+			Font = new Font("맑은 고딕", 7.5f)
 		};
 
 		_soundEnabled = _settings.AlertSoundEnabled;
@@ -531,13 +531,13 @@ internal sealed class IntelPanel : NativeChildForm
 			Size = new Size(42, 22),
 			TextAlign = ContentAlignment.MiddleLeft,
 			ForeColor = Color.FromArgb(50, 50, 50),
-			Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
+			Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold)
 		};
 		_btnSoundToggle = new Button
 		{
 			Location = new Point(46, 184),
 			Size = new Size(44, 26),
-			Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
 			Cursor = Cursors.Hand,
 			TabStop = false,
 			FlatStyle = FlatStyle.Flat,
@@ -555,7 +555,7 @@ internal sealed class IntelPanel : NativeChildForm
 			Location = new Point(92, 186),
 			Size = new Size(28, 22),
 			TextAlign = ContentAlignment.MiddleLeft,
-			Font = new Font("Segoe UI", 7.5f),
+			Font = new Font("맑은 고딕", 7.5f),
 			ForeColor = Color.FromArgb(80, 80, 80)
 		};
 		var btnSound = new Button
@@ -583,7 +583,7 @@ internal sealed class IntelPanel : NativeChildForm
 			Size = new Size(32, 20),
 			TextAlign = ContentAlignment.MiddleLeft,
 			ForeColor = Color.FromArgb(60, 60, 60),
-			Font = new Font("Segoe UI", 8f)
+			Font = new Font("맑은 고딕", 8f)
 		};
 		_volBar = new TrackBar
 		{
@@ -605,7 +605,7 @@ internal sealed class IntelPanel : NativeChildForm
 			Size = new Size(40, 20),
 			TextAlign = ContentAlignment.MiddleLeft,
 			ForeColor = Color.FromArgb(80, 80, 80),
-			Font = new Font("Segoe UI", 8f)
+			Font = new Font("맑은 고딕", 8f)
 		};
 		_volBar.ValueChanged += (_, _) =>
 		{
@@ -629,7 +629,7 @@ internal sealed class IntelPanel : NativeChildForm
 			Location = new Point(4, 236),
 			Size = new Size(230, 16),
 			ForeColor = Color.FromArgb(90, 90, 90),
-			Font = new Font("Segoe UI", 7f)
+			Font = new Font("맑은 고딕", 7f)
 		};
 		UpdateSoundPathLabel();
 		ApplyVolumeUi();
@@ -641,22 +641,22 @@ internal sealed class IntelPanel : NativeChildForm
 			Text = "지도(초)",
 			Location = new Point(4, 252),
 			AutoSize = true,
-			Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+			Font = new Font("맑은 고딕", 7.5f, FontStyle.Bold),
 			ForeColor = Color.FromArgb(40, 40, 40)
 		};
-		var lblZ = new Label { Text = "Z", Location = new Point(4, 272), AutoSize = true, Font = new Font("Segoe UI", 7f) };
+		var lblZ = new Label { Text = "Z", Location = new Point(4, 272), AutoSize = true, Font = new Font("맑은 고딕", 7f) };
 		_mapZkbSec = MakeMapSecSpin(18, 268, _settings.MapZkbDisplaySec, 5, 3600, v =>
 		{
 			_settings.MapZkbDisplaySec = v;
 			_settings.Save();
 		});
-		var lblI = new Label { Text = "인", Location = new Point(78, 272), AutoSize = true, Font = new Font("Segoe UI", 7f) };
+		var lblI = new Label { Text = "인", Location = new Point(78, 272), AutoSize = true, Font = new Font("맑은 고딕", 7f) };
 		_mapIntelSec = MakeMapSecSpin(94, 268, _settings.MapIntelDisplaySec, 5, 7200, v =>
 		{
 			_settings.MapIntelDisplaySec = v;
 			_settings.Save();
 		});
-		var lblF = new Label { Text = "강", Location = new Point(154, 272), AutoSize = true, Font = new Font("Segoe UI", 7f) };
+		var lblF = new Label { Text = "강", Location = new Point(154, 272), AutoSize = true, Font = new Font("맑은 고딕", 7f) };
 		_mapFreshSec = MakeMapSecSpin(172, 268, _settings.MapIntelHighlightSec, 1, 3600, v =>
 		{
 			_settings.MapIntelHighlightSec = v;
@@ -705,7 +705,7 @@ internal sealed class IntelPanel : NativeChildForm
 		{
 			Dock = DockStyle.Fill,
 			BackColor = Color.White,
-			Font = new Font("Segoe UI", 9.5f)
+			Font = new Font("맑은 고딕", 9.5f)
 		};
 		_logList.ItemDoubleClicked += (idx, pt) =>
 		{
@@ -814,7 +814,7 @@ internal sealed class IntelPanel : NativeChildForm
 			Maximum = max,
 			Value = Math.Clamp(value, min, max),
 			TabStop = false,
-			Font = new Font("Segoe UI", 7.5f)
+			Font = new Font("맑은 고딕", 7.5f)
 		};
 		n.ValueChanged += (_, _) => onChange((int)n.Value);
 		return n;
