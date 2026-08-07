@@ -16,7 +16,6 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	private readonly List<ZkbLossEvent> _items = new();
 	private int _clickIndex = -1;
 	private System.Windows.Forms.Timer? _nameTimer;
-	private System.Windows.Forms.Timer? _diagPollTimer;
 	private IntelEngine? _engine;
 	private bool _bound;
 
@@ -214,11 +213,6 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		_nameTimer = new System.Windows.Forms.Timer { Interval = 2000 };
 		_nameTimer.Tick += (_, _) => RefreshNames();
 		_nameTimer.Start();
-
-		// 진단용: 100ms마다 목록 개수 드리프트 감시 (원인 파악 후 제거)
-		_diagPollTimer = new System.Windows.Forms.Timer { Interval = 100 };
-		_diagPollTimer.Tick += (_, _) => CheckCountDrift("poll");
-		_diagPollTimer.Start();
 	}
 
 	private void OnLoss(ZkbLossEvent ev)
@@ -244,7 +238,6 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					BackColor = RowBackColor(ev)
 				};
 				if (!_list.IsHandleCreated) return;
-				int before = _list.Items.Count;
 				// BeginUpdate/EndUpdate로 감싸지 않으면 맨 위 삽입 + 아래쪽 트림이 두 번의
 				// 별도 리페인트로 나뉘어 처리되면서, 그 사이에 새/밀린 행이 빈 텍스트로
 				// 잠깐 그려지는 경우가 있다 (2초 뒤 RefreshNames가 채울 때까지 깜빡여 보임).
@@ -254,28 +247,14 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					_list.Items.Insert(0, item);
 					while (_list.Items.Count > 300) _list.Items.RemoveAt(_list.Items.Count - 1);
 				}
-				catch (Exception ex) { DiagLog.Write($"OnLoss EXCEPTION: {ex}"); }
+				catch (Exception) { }
 				finally
 				{
 					_list.EndUpdate();
 				}
-				DiagLog.Write($"OnLoss {ev.SystemName}: count {before} -> {_list.Items.Count}");
-				_lastKnownCount = _list.Items.Count;
 			});
 		}
 		catch { }
-	}
-
-	private int _lastKnownCount = -1;
-
-	/// <summary>진단용: 우리 쪽 코드(OnLoss)를 거치지 않고 목록 개수가 바뀌면 로그.</summary>
-	private void CheckCountDrift(string where)
-	{
-		if (!_list.IsHandleCreated) return;
-		int now = _list.Items.Count;
-		if (_lastKnownCount >= 0 && now != _lastKnownCount)
-			DiagLog.Write($"COUNT DRIFT at {where}: {_lastKnownCount} -> {now} (no OnLoss in between)");
-		_lastKnownCount = now;
 	}
 
 	/// <summary>감시 캐릭터와 같은 얼라이언스면 설정된 저채도 색, 아니면 그 외 색. 내 얼라이언스를 아직 모르면 기본 흰색.</summary>
@@ -352,7 +331,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					if (_list.Items[i].SubItems.Count > 2 && _list.Items[i].SubItems[2].Text != j)
 						_list.Items[i].SubItems[2].Text = j;
 				}
-				catch (Exception ex) { hadError = true; DiagLog.Write($"RefreshJumps row {i} EXCEPTION: {ex.GetType().Name}: {ex.Message}"); }
+				catch (Exception) { hadError = true; }
 			}
 		}
 		finally
@@ -360,16 +339,14 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			_list.EndUpdate();
 			// 원본 창에 재부착되는 타이밍과 겹치는 등 네이티브 리스트뷰 상태가 일시적으로
 			// 어긋났던 경우 — EndUpdate만으로는 화면이 완전히 갱신되지 않을 수 있어 강제 재도색.
-			if (hadError) { DiagLog.Write("RefreshJumps hadError -> Invalidate()"); _list.Invalidate(); }
+			if (hadError) _list.Invalidate();
 		}
-		CheckCountDrift("RefreshJumps-end");
 	}
 
 	/// <summary>2초 타이머: 이름 캐시 반영 + "N분 전" 갱신 + 얼라이언스 색 재적용(색상 설정 변경 시).</summary>
 	private void RefreshNames()
 	{
 		if (IsDisposed || !_list.IsHandleCreated || _list.Items.Count == 0) return;
-		CheckCountDrift("RefreshNames-start");
 		// 여러 행/필드가 한 틱에 같이 바뀔 때 낱개로 리페인트되며 잠깐씩 깜빡이는 것을 방지 —
 		// BeginUpdate~EndUpdate 사이 변경은 EndUpdate 시점에 한 번만 다시 그려진다.
 		_list.BeginUpdate();
@@ -399,7 +376,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					if (_list.Items[i].BackColor != desired)
 						_list.Items[i].BackColor = desired;
 				}
-				catch (Exception ex) { hadError = true; DiagLog.Write($"RefreshNames row {i} EXCEPTION: {ex.GetType().Name}: {ex.Message}"); }
+				catch (Exception) { hadError = true; }
 			}
 		}
 		finally
@@ -407,9 +384,8 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			_list.EndUpdate();
 			// 원본 창에 재부착되는 타이밍과 겹치는 등 네이티브 리스트뷰 상태가 일시적으로
 			// 어긋났던 경우 — EndUpdate만으로는 화면이 완전히 갱신되지 않을 수 있어 강제 재도색.
-			if (hadError) { DiagLog.Write("RefreshNames hadError -> Invalidate()"); _list.Invalidate(); }
+			if (hadError) _list.Invalidate();
 		}
-		CheckCountDrift("RefreshNames-end");
 	}
 
 	private void OpenColorSettingsDialog()
@@ -475,8 +451,6 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	{
 		_nameTimer?.Stop();
 		_nameTimer?.Dispose();
-		_diagPollTimer?.Stop();
-		_diagPollTimer?.Dispose();
 		base.OnFormClosed(e);
 	}
 }

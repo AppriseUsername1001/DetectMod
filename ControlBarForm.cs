@@ -33,8 +33,6 @@ internal sealed class ControlBarForm : Form
 	private int _lastClientW;
 	private int _lastClientH;
 	private AppView _lastLaidOutView;
-	private int _diagLastCh = -1;
-	private int _diagLastBottomH = -1;
 
 	/// <summary>이미 chrome이 확장된 EVEAA 창인지 표시하는 윈도우 프로퍼티 이름.
 	/// 비정상 종료된 이전 Mod 세션이 남긴 창에 그대로 재부착하면 폭 확장/자식 이동이 중복 적용된다 — 재부착 전에 이 마커로 감지한다.</summary>
@@ -183,8 +181,6 @@ internal sealed class ControlBarForm : Form
 
 		bool sizeChanged = force ||
 			clientW != _lastClientW || clientH != _lastClientH || _view != _lastLaidOutView;
-		if (sizeChanged)
-			DiagLog.Write($"LayoutChromePanels PROCEEDING force={force} clientW={clientW}(was {_lastClientW}) clientH={clientH}(was {_lastClientH}) view={_view}(was {_lastLaidOutView})");
 		_lastClientW = clientW;
 		_lastClientH = clientH;
 		_lastLaidOutView = _view;
@@ -311,7 +307,6 @@ internal sealed class ControlBarForm : Form
 			if (unchanged)
 				continue;
 
-			DiagLog.Write($"RestoreOriginalChildren REAL hwnd={o.hwnd} nx={nx} ny={ny} nw={nw} nh={nh}");
 			ShowWindow(o.hwnd, SW_SHOW);
 			SetWindowPos(o.hwnd, IntPtr.Zero, nx, ny, nw, nh,
 				SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -421,10 +416,7 @@ internal sealed class ControlBarForm : Form
 			// ShowWindow(SW_HIDE)하면(1.12에서 RestoreOriginalChildren에 적용한 것과 같은
 			// 패턴) 다른 창에 포커스가 가 있을 때 컴포지터 경합으로 ZKB feed가 점멸한다.
 			if (IsWindowVisible(hwnd))
-			{
-				DiagLog.Write($"HideOriginalChildren REAL hwnd={hwnd}");
 				ShowWindow(hwnd, SW_HIDE);
-			}
 			return true;
 		}, IntPtr.Zero);
 	}
@@ -847,12 +839,6 @@ internal sealed class ControlBarForm : Form
 				int bottomH = ZkbPanelHeight(ch);
 				if (bottomH > ch - 80) bottomH = Math.Max(80, ch / 4);
 				int topH = Math.Max(80, ch - bottomH);
-				if (ch != _diagLastCh || bottomH != _diagLastBottomH)
-				{
-					DiagLog.Write($"Sync geometry changed: ch={ch} (was {_diagLastCh}) bottomH={bottomH} (was {_diagLastBottomH}) topH={topH}");
-					_diagLastCh = ch;
-					_diagLastBottomH = bottomH;
-				}
 				ConstrainOriginalChildren(contentX, contentW, topH);
 				if (_zkb.IsHandleCreated)
 				{

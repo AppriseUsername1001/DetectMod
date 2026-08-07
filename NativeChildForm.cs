@@ -116,7 +116,6 @@ internal abstract class NativeChildForm : Form
 			return;
 		}
 
-		DiagLog.Write($"{GetType().Name}.PlaceInParent REAL SetWindowPos x={x} y={y} w={w} h={h} force={force} sameBounds={sameBounds} prevPlaced=({(_hasPlaced ? $"{_placedX},{_placedY},{_placedW},{_placedH}" : "none")})");
 		IntPtr z = bringToFront ? HWND_TOP : HWND_BOTTOM;
 		uint flags = SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW;
 		SetWindowPos(Handle, z, x, y, w, h, flags);
@@ -158,7 +157,6 @@ internal abstract class NativeChildForm : Form
 		if (!_parented)
 			return;
 
-		DiagLog.Write($"{GetType().Name}.HideInParent REAL (was parented)");
 		ShowWindow(Handle, SW_HIDE);
 
 		int style = GetWindowLong(Handle, GWL_STYLE);
