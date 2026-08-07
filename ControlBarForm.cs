@@ -116,8 +116,21 @@ internal sealed class ControlBarForm : Form
 		_trayService?.Dispose();
 		_trayService = null;
 
+		ApplyWindowTitle();
+
 		// 부착 직후 UI가 안정된 뒤 조용히 한 번만 업데이트 확인 (시작을 지연시키지 않도록 지연 실행)
 		_ = DelayedUpdateCheckAsync();
+	}
+
+	/// <summary>제목 표시줄 "EVEAA"를 "DetectMod"로 덮어쓴다. Sync()에서 매 틱 저비용으로 재확인 —
+	/// 원본 창이 내부적으로 자기 제목을 다시 설정하는 경우를 대비.</summary>
+	private void ApplyWindowTitle()
+	{
+		if (_targetHwnd == IntPtr.Zero || !IsWindow(_targetHwnd)) return;
+		var sb = new StringBuilder(64);
+		GetWindowText(_targetHwnd, sb, 64);
+		if (sb.ToString() != "DetectMod")
+			SetWindowText(_targetHwnd, "DetectMod");
 	}
 
 	private async Task DelayedUpdateCheckAsync()
@@ -779,6 +792,8 @@ internal sealed class ControlBarForm : Form
 			return;
 		}
 
+		ApplyWindowTitle();
+
 		bool visible = IsWindowVisible(_targetHwnd);
 		if (!visible)
 		{
@@ -924,6 +939,7 @@ internal sealed class ControlBarForm : Form
 	[DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 	[DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 	[DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetWindowText(IntPtr hWnd, string lpString);
 	[DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
 	[StructLayout(LayoutKind.Sequential)]
