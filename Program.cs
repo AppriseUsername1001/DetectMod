@@ -81,6 +81,8 @@ internal static class Program
 			settings.Save();
 		}
 
+		EnsureDpiUnawareCompat(eveaaExe);
+
 		// 이미 떠 있으면 창에 붙이고, 없으면 실행
 		IntPtr existing = FindEveaaWindow();
 
@@ -202,6 +204,29 @@ internal static class Program
 		}
 
 		return IntPtr.Zero;
+	}
+
+	/// <summary>
+	/// 원본 EVEAA(v2.26)는 DPI 인식을 선언하지 않은 구형 앱이라, 고배율(150%+) 화면에서는
+	/// Windows가 좌표를 가상화(virtualize)해 "영역 설정" 같은 화면 캡처/좌표 기반 기능이
+	/// 잘리거나 어긋나 보인다 — 100%로 낮추면 정상 동작한다는 사용자 보고로 확인.
+	/// exe 자체(디컴파일 소스는 빌드 불가)를 손대지 않고, Windows 호환성 탭의
+	/// "고 DPI 설정에서 배율 조정 사용 안 함"과 동일한 효과의 레지스트리 플래그를 미리 걸어둔다.
+	/// </summary>
+	private static void EnsureDpiUnawareCompat(string exePath)
+	{
+		try
+		{
+			string full = Path.GetFullPath(exePath);
+			using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
+				@"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers");
+			string existing = key.GetValue(full) as string ?? "";
+			if (existing.Contains("HIGHDPIAWARE", StringComparison.OrdinalIgnoreCase))
+				return;
+			string updated = string.IsNullOrWhiteSpace(existing) ? "~ HIGHDPIAWARE" : existing.TrimEnd() + " HIGHDPIAWARE";
+			key.SetValue(full, updated);
+		}
+		catch { }
 	}
 
 	private static IntPtr FindEveaaWindow() => FindEveaaWindowForProcess(0, requireVisible: true);
