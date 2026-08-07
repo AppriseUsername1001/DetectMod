@@ -149,12 +149,23 @@ internal sealed class ControlBarForm : Form
 			string destPath = Path.Combine(dir, $"EVEDetectmod {info.Version}.exe");
 			await UpdateChecker.DownloadAsync(info.DownloadUrl, destPath);
 
-			Process.Start(new ProcessStartInfo
+			// 새 버전에게 구버전 exe 경로를 넘겨준다 — 실행 중인 파일은 삭제가 안 되므로
+			// (직접 테스트로 확인: Access Denied) 이 프로세스가 완전히 종료된 뒤
+			// 새 버전이 대신 지운다 (Program.cs의 --cleanup-old 처리).
+			var psi = new ProcessStartInfo
 			{
 				FileName = destPath,
 				WorkingDirectory = dir,
 				UseShellExecute = true
-			});
+			};
+			string? currentExe = Environment.ProcessPath;
+			if (!string.IsNullOrEmpty(currentExe) && !string.Equals(currentExe, destPath, StringComparison.OrdinalIgnoreCase))
+			{
+				psi.ArgumentList.Add("--cleanup-old");
+				psi.ArgumentList.Add(currentExe);
+			}
+			Process.Start(psi);
+
 			progress.Close();
 			Close();
 		}

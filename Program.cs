@@ -33,6 +33,8 @@ internal static class Program
 			return;
 		}
 
+		CleanupOldVersionIfRequested(args);
+
 		ApplicationConfiguration.Initialize();
 		Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 		Application.ThreadException += (_, e) =>
@@ -204,6 +206,35 @@ internal static class Program
 		}
 
 		return IntPtr.Zero;
+	}
+
+	/// <summary>
+	/// 자동 업데이트로 새 버전이 뜰 때 "--cleanup-old &lt;경로&gt;"로 구버전 exe 경로를 넘겨받아
+	/// 지운다. 실행 중인 exe는 삭제가 안 되므로(직접 확인: Access Denied) 구버전 프로세스가
+	/// 이 프로세스를 띄운 뒤 스스로 종료하길 잠깐 기다렸다가(잠금이 풀릴 때까지 재시도) 지운다.
+	/// UI 시작을 지연시키지 않도록 백그라운드에서 처리.
+	/// </summary>
+	private static void CleanupOldVersionIfRequested(string[] args)
+	{
+		int idx = Array.IndexOf(args, "--cleanup-old");
+		if (idx < 0 || idx + 1 >= args.Length) return;
+		string oldPath = args[idx + 1];
+
+		Task.Run(() =>
+		{
+			for (int i = 0; i < 40 && File.Exists(oldPath); i++)
+			{
+				try
+				{
+					File.Delete(oldPath);
+					return;
+				}
+				catch
+				{
+					Thread.Sleep(250);
+				}
+			}
+		});
 	}
 
 	/// <summary>
