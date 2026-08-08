@@ -33,6 +33,9 @@ internal sealed class ControlBarForm : Form
 	private int _lastClientW;
 	private int _lastClientH;
 	private AppView _lastLaidOutView;
+	private int _pendingSmallW;
+	private int _pendingSmallH;
+	private int _pendingSmallStrikes;
 
 	/// <summary>이미 chrome이 확장된 EVEAA 창인지 표시하는 윈도우 프로퍼티 이름.
 	/// 비정상 종료된 이전 Mod 세션이 남긴 창에 그대로 재부착하면 폭 확장/자식 이동이 중복 적용된다 — 재부착 전에 이 마커로 감지한다.</summary>
@@ -202,6 +205,30 @@ internal sealed class ControlBarForm : Form
 		int clientH = client.Bottom - client.Top;
 		if (clientW < 10 || clientH < 10)
 			return;
+
+		// 다른 창 조작 중 컴포지터 경합으로 GetClientRect가 순간적으로(1틱만) 실제보다
+		// 훨씬 작은 크기를 보고하는 경우가 있다 — 그대로 반영하면 ZKB 등 패널이 찌그러졌다가
+		// 다음 틱에 복구되어 점멸로 보인다. 강제 리레이아웃이 아닌 일반 틱에서 이전 크기의
+		// 절반 미만으로 급감한 값은, 같은 값이 연속으로 3틱(약 600ms) 나올 때만 실제
+		// 리사이즈로 인정하고 그 전까지는 이번 틱을 건너뛴다. 커지는 방향은 즉시 반영한다.
+		if (!force && _lastClientW > 0 && _lastClientH > 0 &&
+			(clientW < _lastClientW / 2 || clientH < _lastClientH / 2))
+		{
+			if (clientW == _pendingSmallW && clientH == _pendingSmallH)
+				_pendingSmallStrikes++;
+			else
+			{
+				_pendingSmallW = clientW;
+				_pendingSmallH = clientH;
+				_pendingSmallStrikes = 1;
+			}
+			if (_pendingSmallStrikes < 3)
+				return;
+		}
+		else
+		{
+			_pendingSmallStrikes = 0;
+		}
 
 		bool sizeChanged = force ||
 			clientW != _lastClientW || clientH != _lastClientH || _view != _lastLaidOutView;
@@ -843,7 +870,9 @@ internal sealed class ControlBarForm : Form
 		if (_view == AppView.Intel)
 		{
 			HideOriginalChildren();
-			if (!_intel.IsShownInHost || !_zkb.IsShownInHost)
+			bool intelShown = _intel.IsShownInHost;
+			bool zkbShown = _zkb.IsShownInHost;
+			if (!intelShown || !zkbShown)
 			{
 				_lastClientW = 0;
 				_lastClientH = 0;
