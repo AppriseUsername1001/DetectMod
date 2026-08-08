@@ -63,9 +63,18 @@ internal static class EveWatcher
 
 	public static bool StartWatcherProcess()
 	{
-		if (IsWatcherRunning())
+		(int pid, string exePath) = ReadPidInfo();
+		if (pid > 0 && IsPidAlive(pid))
 		{
-			return true;
+			// 이미 떠 있는 감시 프로세스가 지금 실행 중인 버전과 같은 exe면 그대로 둔다.
+			if (string.Equals(exePath, ExePath, StringComparison.OrdinalIgnoreCase))
+				return true;
+
+			// 다른(주로 구) 버전의 감시 프로세스가 떠 있는 경우 — 그대로 두면 새 버전을 아무리
+			// 게시해도 이 낡은 백그라운드 프로세스가 EVE 실행 감지 때마다 계속 구버전만
+			// 실행한다. 죽이고 지금 버전으로 새로 띄운다.
+			try { Process.GetProcessById(pid).Kill(entireProcessTree: true); } catch { }
+			TryDeletePid();
 		}
 
 		try
@@ -132,7 +141,7 @@ internal static class EveWatcher
 
 		try
 		{
-			File.WriteAllText(PidPath, Environment.ProcessId.ToString());
+			File.WriteAllText(PidPath, Environment.ProcessId + "\n" + ExePath);
 		}
 		catch
 		{
@@ -250,11 +259,29 @@ internal static class EveWatcher
 	{
 		try
 		{
-			return int.Parse(File.ReadAllText(PidPath).Trim());
+			string first = File.ReadLines(PidPath).FirstOrDefault() ?? "";
+			return int.Parse(first.Trim());
 		}
 		catch
 		{
 			return 0;
+		}
+	}
+
+	/// <summary>PID와 함께 그 감시 프로세스가 어느 exe에서 떠 있는지도 읽는다 — 버전이 다르면
+	/// StartWatcherProcess()가 교체할 수 있도록.</summary>
+	private static (int pid, string exePath) ReadPidInfo()
+	{
+		try
+		{
+			string[] lines = File.ReadAllLines(PidPath);
+			int pid = lines.Length > 0 ? int.Parse(lines[0].Trim()) : 0;
+			string exePath = lines.Length > 1 ? lines[1].Trim() : "";
+			return (pid, exePath);
+		}
+		catch
+		{
+			return (0, "");
 		}
 	}
 
