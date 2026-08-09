@@ -116,6 +116,7 @@ internal abstract class NativeChildForm : Form
 			return;
 		}
 
+		DiagLog.Write($"{GetType().Name}.PlaceInParent REAL SetWindowPos x={x} y={y} w={w} h={h} force={force} sameBounds={sameBounds} isShown={isShown} wasPlaced=({(_hasPlaced ? $"{_placedX},{_placedY},{_placedW},{_placedH}" : "none")})");
 		IntPtr z = bringToFront ? HWND_TOP : HWND_BOTTOM;
 		uint flags = SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW;
 		SetWindowPos(Handle, z, x, y, w, h, flags);

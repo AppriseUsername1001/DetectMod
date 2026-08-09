@@ -222,8 +222,10 @@ internal sealed class ControlBarForm : Form
 				_pendingSmallH = clientH;
 				_pendingSmallStrikes = 1;
 			}
+			DiagLog.Write($"SHRINK SPIKE: prev=({_lastClientW}x{_lastClientH}) new=({clientW}x{clientH}) strikes={_pendingSmallStrikes}");
 			if (_pendingSmallStrikes < 3)
 				return;
+			DiagLog.Write($"SHRINK ACCEPTED AS REAL RESIZE after {_pendingSmallStrikes} strikes: ({clientW}x{clientH})");
 		}
 		else
 		{
@@ -885,10 +887,20 @@ internal sealed class ControlBarForm : Form
 			if (_intel.IsHandleCreated)
 				_intel.SetVisible(false);
 
-			if (GetClientRect(_targetHwnd, out RECT client))
+			// LayoutChromePanels() (called earlier this same tick, above) already read
+			// GetClientRect and ran it through the shrink-spike debounce, leaving
+			// _lastClientW/_lastClientH holding the last *accepted* (non-spurious) size
+			// regardless of whether this tick's raw reading was rejected as a glitch.
+			// This block used to call GetClientRect(_targetHwnd, ...) again independently
+			// and apply whatever it got with no debounce at all -- so a transient tiny
+			// reading (e.g. w=10 h=80) that LayoutChromePanels correctly rejected could
+			// still slip through right here, in the same tick, and stick until a later
+			// tick's reading happened to differ enough to update it again. Reusing the
+			// already-debounced fields closes that second path.
+			if (_lastClientW >= 10 && _lastClientH >= 10)
 			{
-				int cw = client.Right - client.Left;
-				int ch = client.Bottom - client.Top;
+				int cw = _lastClientW;
+				int ch = _lastClientH;
 				int contentX = SideNavPanel.WidthPx;
 				int contentW = Math.Max(10, cw - SideNavPanel.WidthPx - AutoRunPanel.WidthPx);
 				int bottomH = ZkbPanelHeight(ch);
