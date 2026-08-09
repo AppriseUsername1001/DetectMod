@@ -843,9 +843,13 @@ internal sealed class ControlBarForm : Form
 		IntPtr fgRoot = fg == IntPtr.Zero ? IntPtr.Zero : GetAncestor(fg, GA_ROOT);
 		bool isFg = fg == _targetHwnd || fgRoot == _targetHwnd;
 		bool focusGained = isFg && !_wasForeground;
+		bool focusLost = !isFg && _wasForeground;
+		if (focusLost)
+			DiagLog.Write("FOCUS LOST (target no longer foreground)");
 		_wasForeground = isFg;
 		if (focusGained)
 		{
+			DiagLog.Write("FOCUS GAINED -> ForceChromeRefresh");
 			ForceChromeRefresh();
 			return;
 		}

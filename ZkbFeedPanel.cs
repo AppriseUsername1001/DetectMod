@@ -18,6 +18,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	private System.Windows.Forms.Timer? _nameTimer;
 	private IntelEngine? _engine;
 	private bool _bound;
+	private string _lastLoggedRow0Time = "";
 
 	public ZkbFeedPanel(ModSettings settings)
 	{
@@ -375,6 +376,19 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					Color desired = RowBackColor(ev);
 					if (_list.Items[i].BackColor != desired)
 						_list.Items[i].BackColor = desired;
+					// row 0's computed "time ago" only changes ~once/minute, so logging on
+					// change is naturally low-volume. Purpose: if the screen ever shows
+					// something implausible (e.g. "88일 전" sandwiched between "5분 전" rows,
+					// as seen in a user video), this proves whether the *computed* value was
+					// already wrong (a data bug) or correct (a pure native-paint corruption,
+					// since the log would show the right text was assigned).
+					if (i == 0 && t != _lastLoggedRow0Time)
+					{
+						_lastLoggedRow0Time = t;
+						DiagLog.Write($"Row0 computed: time={t} system={ev.SystemName} alliance={a} ship={s}");
+					}
+					if (string.IsNullOrEmpty(t) || string.IsNullOrEmpty(s))
+						DiagLog.Write($"BLANK FIELD after refresh: row={i} time='{t}' ship='{s}'");
 				}
 				catch (Exception) { hadError = true; }
 			}
