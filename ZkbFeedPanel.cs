@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using EVEAA.Mod.Intel;
 
 namespace EVEAA.Mod;
@@ -15,10 +16,10 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	private readonly Label _volumePercentLabel;
 	private readonly List<ZkbLossEvent> _items = new();
 	private int _clickIndex = -1;
-	private System.Windows.Forms.Timer? _nameTimer;
+	private System.Windows.Forms.Timer? _redrawTimer;
 	private IntelEngine? _engine;
 	private bool _bound;
-	private string _lastLoggedRow0Time = "";
+	private string _lastRenderedSignature = "";
 
 	public ZkbFeedPanel(ModSettings settings)
 	{
@@ -184,6 +185,9 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 				ReparentToHost();
 				Visible = true;
 				ShowWindow(Handle, SW_SHOW);
+				// 방금 새로 보이게 됐다면 5초 주기를 기다리지 않고 바로 최신 상태를 그려준다 —
+				// 변경 없으면 RebuildIfChanged 내부에서 자체적으로 아무것도 안 건드리니 안전하다.
+				RebuildIfChanged();
 			}
 		}
 		else
@@ -201,19 +205,18 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		_bound = true;
 		_engine.ZkbRegionOnly = true;
 		_engine.ZkbLoss += OnLoss;
-		_engine.LocationUpdated += _ =>
-		{
-			if (IsDisposed) return;
-			try { BeginInvoke(RefreshJumps); } catch { }
-		};
 		_engine.ZkbStatus += msg =>
 		{
 			if (IsDisposed) return;
 			try { BeginInvoke(() => { _status.Text = msg; }); } catch { }
 		};
-		_nameTimer = new System.Windows.Forms.Timer { Interval = 2000 };
-		_nameTimer.Tick += (_, _) => RefreshNames();
-		_nameTimer.Start();
+		// 킬이 들어올 때마다, 혹은 2초마다 네이티브 리스트뷰를 직접 건드리던 예전 방식이
+		// 반복적인 파편 손상(점멸)의 원인이었다 — 이제 새 킬은 _items(순수 데이터)에만
+		// 바로 반영하고, 실제 화면(_list)은 5초 주기로 한 번씩만, 그것도 내용이 실제로
+		// 달라졌을 때만 통째로 다시 그린다.
+		_redrawTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+		_redrawTimer.Tick += (_, _) => RebuildIfChanged();
+		_redrawTimer.Start();
 	}
 
 	private void OnLoss(ZkbLossEvent ev)
@@ -225,37 +228,69 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			{
 				_items.Insert(0, ev);
 				while (_items.Count > 300) _items.RemoveAt(_items.Count - 1);
-				var item = new ListViewItem(new[]
-				{
-					FormatAgo(ev.KillTimeUtc),
-					ev.SystemName,
-					FormatJumps(ev.SystemName),
-					ResolveAlliance(ev),
-					ResolveShip(ev)
-				})
-				{
-					Tag = ev,
-					ForeColor = ev.IsNpc ? Color.FromArgb(120, 120, 120) : Color.FromArgb(30, 30, 30),
-					BackColor = RowBackColor(ev)
-				};
-				if (!_list.IsHandleCreated) return;
-				// BeginUpdate/EndUpdate로 감싸지 않으면 맨 위 삽입 + 아래쪽 트림이 두 번의
-				// 별도 리페인트로 나뉘어 처리되면서, 그 사이에 새/밀린 행이 빈 텍스트로
-				// 잠깐 그려지는 경우가 있다 (2초 뒤 RefreshNames가 채울 때까지 깜빡여 보임).
-				_list.BeginUpdate();
-				try
-				{
-					_list.Items.Insert(0, item);
-					while (_list.Items.Count > 300) _list.Items.RemoveAt(_list.Items.Count - 1);
-				}
-				catch (Exception) { }
-				finally
-				{
-					_list.EndUpdate();
-				}
 			});
 		}
 		catch { }
+	}
+
+	/// <summary>5초마다 호출. 현재 _items로부터 화면에 표시될 내용을 계산해, 마지막으로
+	/// 실제로 그린 내용과 다를 때만 리스트를 통째로(Clear + 재생성) 다시 그린다.
+	/// 변경이 없으면 네이티브 컨트롤을 아예 건드리지 않는다 — "새로운 정보가 없으면
+	/// 그대로 둔다"는 원칙. 스크롤 위치는 맨 위에 보이던 킬메일 ID로 다시 찾아 복원한다.</summary>
+	private void RebuildIfChanged(bool force = false)
+	{
+		if (IsDisposed || !_list.IsHandleCreated) return;
+
+		var rows = new List<(string time, string system, string jumps, string alliance, string ship, Color color, ZkbLossEvent ev)>(_items.Count);
+		var sig = new StringBuilder();
+		foreach (var ev in _items)
+		{
+			string time = FormatAgo(ev.KillTimeUtc);
+			string jumps = FormatJumps(ev.SystemName);
+			string alliance = ResolveAlliance(ev);
+			string ship = ResolveShip(ev);
+			Color color = RowBackColor(ev);
+			rows.Add((time, ev.SystemName, jumps, alliance, ship, color, ev));
+			sig.Append(ev.KillmailId).Append('|').Append(time).Append('|').Append(jumps).Append('|')
+				.Append(alliance).Append('|').Append(ship).Append('|').Append(color.ToArgb()).Append(';');
+		}
+		string signature = sig.ToString();
+		if (!force && signature == _lastRenderedSignature) return;
+		_lastRenderedSignature = signature;
+
+		long? topKillmailId = (_list.TopItem?.Tag as ZkbLossEvent)?.KillmailId;
+
+		_list.BeginUpdate();
+		try
+		{
+			_list.Items.Clear();
+			foreach (var r in rows)
+			{
+				var item = new ListViewItem(new[] { r.time, r.system, r.jumps, r.alliance, r.ship })
+				{
+					Tag = r.ev,
+					ForeColor = r.ev.IsNpc ? Color.FromArgb(120, 120, 120) : Color.FromArgb(30, 30, 30),
+					BackColor = r.color
+				};
+				_list.Items.Add(item);
+			}
+		}
+		finally
+		{
+			_list.EndUpdate();
+		}
+
+		if (topKillmailId is long tid)
+		{
+			foreach (ListViewItem item in _list.Items)
+			{
+				if (item.Tag is ZkbLossEvent ev2 && ev2.KillmailId == tid)
+				{
+					_list.TopItem = item;
+					break;
+				}
+			}
+		}
 	}
 
 	/// <summary>감시 캐릭터와 같은 얼라이언스면 설정된 저채도 색, 아니면 그 외 색. 내 얼라이언스를 아직 모르면 기본 흰색.</summary>
@@ -314,94 +349,6 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		return d.Value + "j";
 	}
 
-	private void RefreshJumps()
-	{
-		if (IsDisposed || !_list.IsHandleCreated || _list.Items.Count == 0) return;
-		_list.BeginUpdate();
-		bool hadError = false;
-		try
-		{
-			for (int i = 0; i < _list.Items.Count; i++)
-			{
-				// 행 하나가 실패해도 나머지 행은 계속 갱신 — 통째로 중단하면 그 뒤 행들이
-				// 다음 틱까지 이전 상태(또는 빈 값) 그대로 남아 흰 얼룩처럼 보인다.
-				try
-				{
-					if (_list.Items[i].Tag is not ZkbLossEvent ev) continue;
-					string j = FormatJumps(ev.SystemName);
-					if (_list.Items[i].SubItems.Count > 2 && _list.Items[i].SubItems[2].Text != j)
-						_list.Items[i].SubItems[2].Text = j;
-				}
-				catch (Exception) { hadError = true; }
-			}
-		}
-		finally
-		{
-			_list.EndUpdate();
-			// 원본 창에 재부착되는 타이밍과 겹치는 등 네이티브 리스트뷰 상태가 일시적으로
-			// 어긋났던 경우 — EndUpdate만으로는 화면이 완전히 갱신되지 않을 수 있어 강제 재도색.
-			if (hadError) _list.Invalidate();
-		}
-	}
-
-	/// <summary>2초 타이머: 이름 캐시 반영 + "N분 전" 갱신 + 얼라이언스 색 재적용(색상 설정 변경 시).</summary>
-	private void RefreshNames()
-	{
-		if (IsDisposed || !_list.IsHandleCreated || _list.Items.Count == 0) return;
-		// 여러 행/필드가 한 틱에 같이 바뀔 때 낱개로 리페인트되며 잠깐씩 깜빡이는 것을 방지 —
-		// BeginUpdate~EndUpdate 사이 변경은 EndUpdate 시점에 한 번만 다시 그려진다.
-		_list.BeginUpdate();
-		bool hadError = false;
-		try
-		{
-			for (int i = 0; i < _list.Items.Count; i++)
-			{
-				// 행 하나가 실패해도 나머지 행은 계속 갱신 — 통째로 중단하면 그 뒤 행들이
-				// 다음 틱까지 이전 상태(또는 빈 값) 그대로 남아 흰 얼룩처럼 보인다.
-				try
-				{
-					if (_list.Items[i].Tag is not ZkbLossEvent ev) continue;
-					string t = FormatAgo(ev.KillTimeUtc);
-					string j = FormatJumps(ev.SystemName);
-					string a = ResolveAlliance(ev);
-					string s = ResolveShip(ev);
-					if (_list.Items[i].SubItems[0].Text != t)
-						_list.Items[i].SubItems[0].Text = t;
-					if (_list.Items[i].SubItems.Count > 2 && _list.Items[i].SubItems[2].Text != j)
-						_list.Items[i].SubItems[2].Text = j;
-					if (_list.Items[i].SubItems.Count > 3 && _list.Items[i].SubItems[3].Text != a)
-						_list.Items[i].SubItems[3].Text = a;
-					if (_list.Items[i].SubItems.Count > 4 && _list.Items[i].SubItems[4].Text != s)
-						_list.Items[i].SubItems[4].Text = s;
-					Color desired = RowBackColor(ev);
-					if (_list.Items[i].BackColor != desired)
-						_list.Items[i].BackColor = desired;
-					// row 0's computed "time ago" only changes ~once/minute, so logging on
-					// change is naturally low-volume. Purpose: if the screen ever shows
-					// something implausible (e.g. "88일 전" sandwiched between "5분 전" rows,
-					// as seen in a user video), this proves whether the *computed* value was
-					// already wrong (a data bug) or correct (a pure native-paint corruption,
-					// since the log would show the right text was assigned).
-					if (i == 0 && t != _lastLoggedRow0Time)
-					{
-						_lastLoggedRow0Time = t;
-						DiagLog.Write($"Row0 computed: time={t} system={ev.SystemName} alliance={a} ship={s}");
-					}
-					if (string.IsNullOrEmpty(t) || string.IsNullOrEmpty(s))
-						DiagLog.Write($"BLANK FIELD after refresh: row={i} time='{t}' ship='{s}'");
-				}
-				catch (Exception) { hadError = true; }
-			}
-		}
-		finally
-		{
-			_list.EndUpdate();
-			// 원본 창에 재부착되는 타이밍과 겹치는 등 네이티브 리스트뷰 상태가 일시적으로
-			// 어긋났던 경우 — EndUpdate만으로는 화면이 완전히 갱신되지 않을 수 있어 강제 재도색.
-			if (hadError) _list.Invalidate();
-		}
-	}
-
 	private void OpenColorSettingsDialog()
 	{
 		using var dlg = new Form
@@ -450,7 +397,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		_settings.ZkbSameAllianceColorArgb = sameSwatch.BackColor.ToArgb();
 		_settings.ZkbOtherAllianceColorArgb = otherSwatch.BackColor.ToArgb();
 		_settings.Save();
-		RefreshNames();
+		RebuildIfChanged(force: true);
 	}
 
 	private void OpenKill(int index)
@@ -463,8 +410,8 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 
 	protected override void OnFormClosed(FormClosedEventArgs e)
 	{
-		_nameTimer?.Stop();
-		_nameTimer?.Dispose();
+		_redrawTimer?.Stop();
+		_redrawTimer?.Dispose();
 		base.OnFormClosed(e);
 	}
 }
