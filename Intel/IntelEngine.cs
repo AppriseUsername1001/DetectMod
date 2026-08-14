@@ -15,6 +15,37 @@ internal sealed class IntelThreatEvent
 	public bool IsKillReport { get; init; }
 	public string Raw { get; init; } = "";
 
+	public int? HostileCount { get; init; }
+	public bool HostileCountIsPlus { get; init; }
+	public bool HostileCountIsExact { get; init; }
+	public string? GateSystem { get; init; }
+	public bool GateIsAnsiblex { get; init; }
+	public string? MovementVerb { get; init; }
+	public string? MovementSystem { get; init; }
+	public bool MovementIsGate { get; init; }
+	public bool IsQuestion { get; init; }
+	public string? QuestionType { get; init; }
+
+	/// <summary>구조화 필드(게이트/이동/적 카운트/질문)를 사람이 읽는 접미사로 변환.</summary>
+	public string ExtraSuffix()
+	{
+		if (!string.IsNullOrEmpty(MovementVerb) && !string.IsNullOrEmpty(MovementSystem))
+		{
+			string via = MovementIsGate ? " 게이트" : "";
+			return $" · {MovementSystem}{via}로 이동({MovementVerb})";
+		}
+		if (!string.IsNullOrEmpty(GateSystem))
+			return $" · {GateSystem} {(GateIsAnsiblex ? "안시블렉스" : "게이트")}";
+		if (HostileCount is int hc)
+		{
+			string sign = HostileCountIsPlus ? "+" : HostileCountIsExact ? "=" : "";
+			return $" · 적 {sign}{hc}";
+		}
+		if (IsQuestion)
+			return $" · [질문:{QuestionType}]";
+		return "";
+	}
+
 	public string JumpSuffix()
 	{
 		if (Jumps >= 0) return $"({Jumps}j)";
@@ -40,8 +71,12 @@ internal sealed class IntelThreatEvent
 			string sys = string.IsNullOrEmpty(System) ? "-" : System;
 			string ch = string.IsNullOrEmpty(Character) ? "-" : Character;
 			string sh = string.IsNullOrEmpty(Ship) ? "-" : Ship;
-			return $"{prefix}  {sys} / {ch} / {sh}";
+			return $"{prefix}  {sys} / {ch} / {sh}{ExtraSuffix()}";
 		}
+
+		string extra = ExtraSuffix();
+		if (!string.IsNullOrEmpty(extra))
+			return $"{prefix} {extra.TrimStart(' ', '·')}";
 
 		string msg = string.IsNullOrEmpty(Message) ? Raw : Message;
 		return $"{prefix}  {msg}";
@@ -356,7 +391,17 @@ internal sealed class IntelEngine : IDisposable
 				IsAlert = isAlert,
 				IsClear = item.IsClear,
 				IsKillReport = item.IsKillReport,
-				Raw = item.Raw
+				Raw = item.Raw,
+				HostileCount = item.HostileCount,
+				HostileCountIsPlus = item.HostileCountIsPlus,
+				HostileCountIsExact = item.HostileCountIsExact,
+				GateSystem = item.GateSystem,
+				GateIsAnsiblex = item.GateIsAnsiblex,
+				MovementVerb = item.MovementVerb,
+				MovementSystem = item.MovementSystem,
+				MovementIsGate = item.MovementIsGate,
+				IsQuestion = item.IsQuestion,
+				QuestionType = item.QuestionType
 			});
 		}
 

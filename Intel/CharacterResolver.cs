@@ -51,6 +51,25 @@ internal sealed class CharacterResolver : IDisposable
 		return NameRe.IsMatch(token);
 	}
 
+	/// <summary>
+	/// RIFT는 자체 영단어 사전으로 "are kidding now" 같은 평범한 소문자 문장 조각이 캐릭터로
+	/// 오인식되는 걸 막는다. 우리는 사전이 없으므로 대신 대문자 시작(Title Case) 여부를 대리 신호로
+	/// 쓴다 — EVE 캐릭터명은 항상 각 단어가 대문자로 시작하므로, 아직 ESI로 미확인(Unknown)인
+	/// 후보는 이 조건을 통과해야만 캐릭터 후보 점수를 받는다. 이미 ESI로 실존 확인(Exists)된 이름은
+	/// 이 검사를 건너뛴다(신뢰할 수 있는 정답이므로).
+	/// </summary>
+	public static bool IsTitleCaseName(string phrase)
+	{
+		phrase = (phrase ?? "").Trim();
+		if (phrase.Length == 0) return false;
+		foreach (string word in phrase.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+		{
+			char c0 = word[0];
+			if (char.IsLetter(c0) && !char.IsUpper(c0)) return false;
+		}
+		return true;
+	}
+
 	/// <summary>ESI로 확인된(또는 아직 미확인인) 상태 조회. 캐시에 없으면 Unknown. 후보 분할 채점용.</summary>
 	public CharResolveStatus GetStatus(string name)
 	{

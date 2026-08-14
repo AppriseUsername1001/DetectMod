@@ -16,6 +16,23 @@ internal sealed class ParsedIntelLine
 	public string Raw { get; init; } = "";
 	/// <summary>로그 줄의 실제 UTC 타임스탬프. 신선도(스테일) 판정에 사용.</summary>
 	public DateTime? TimestampUtc { get; init; }
+
+	/// <summary>함선명에 안 붙은 독립 적 카운트 보고 (예: "+5", "5+", "=15", "15 neuts"). 없으면 null.</summary>
+	public int? HostileCount { get; init; }
+	public bool HostileCountIsPlus { get; init; }
+	public bool HostileCountIsExact { get; init; }
+
+	/// <summary>"{성계} gate" / "{성계} ansiblex" 형태의 게이트 언급.</summary>
+	public string? GateSystem { get; init; }
+	public bool GateIsAnsiblex { get; init; }
+
+	/// <summary>"going/jumped/jumping {성계|게이트}" 형태의 이동 보고.</summary>
+	public string? MovementVerb { get; init; }
+	public string? MovementSystem { get; init; }
+	public bool MovementIsGate { get; init; }
+
+	public bool IsQuestion { get; init; }
+	public string? QuestionType { get; init; }
 }
 
 internal static class IntelParser
@@ -38,7 +55,14 @@ internal static class IntelParser
 		"to", "from", "with", "no", "visual", "vision", "seen", "see", "is", "are", "was",
 		"were", "he", "she", "they", "them", "his", "her", "their", "blob", "fleet",
 		"standing", "standings", "local", "docked", "undock", "undocked",
-		"kill", "killed", "pod", "podded"
+		"kill", "killed", "pod", "podded",
+		// RIFT은 영단어 사전으로 일상 문장 조각을 캐릭터명 후보에서 배제하지만 우리는 사전이 없다.
+		// 대문자로 시작해도(Title Case 통과) 자주 등장하는 일상 단어는 여기서 추가로 막아 오탐을 줄인다.
+		"kidding", "now", "right", "you", "really", "sure", "yeah", "yes", "lol", "lmao",
+		"haha", "ok", "okay", "please", "thanks", "thank", "here", "there", "what", "why",
+		"who", "when", "where", "how", "can", "could", "would", "should", "will", "not",
+		"dont", "im", "its", "up", "down", "out", "over", "under", "again", "still", "just",
+		"like", "so", "but", "if", "then", "than", "guys", "everyone", "anyone", "someone"
 	};
 
 	private static readonly Regex QtyRe = new(@"^(\+\d+|\d+\+|\d+x|x\d+|\*\d+|\d+\*|=?\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -53,6 +77,56 @@ internal static class IntelParser
 	{
 		"gj", "gf", "np", "ty", "thx", "wb", "o/"
 	};
+
+	private static readonly HashSet<string> MovementKeywords = new(StringComparer.OrdinalIgnoreCase)
+	{
+		"going", "jumped", "jumping"
+	};
+
+	private static readonly HashSet<string> GateWords = new(StringComparer.OrdinalIgnoreCase)
+	{
+		"gate"
+	};
+	private static readonly HashSet<string> AnsiblexWords = new(StringComparer.OrdinalIgnoreCase)
+	{
+		"ansiblex", "ansi"
+	};
+
+	/// <summary>RIFT류 질문 문구 사전 (전체 메시지가 이 문구와 일치할 때만 인식).</summary>
+	private static readonly Dictionary<string, string> Questions = new(StringComparer.OrdinalIgnoreCase)
+	{
+		["where is he"] = "Location", ["where is he?"] = "Location",
+		["loc?"] = "Location", ["loc ?"] = "Location", ["location?"] = "Location", ["location ?"] = "Location",
+		["shiptypes?"] = "ShipTypes", ["shiptypes ?"] = "ShipTypes", ["shiptype?"] = "ShipTypes", ["shiptype ?"] = "ShipTypes",
+		["ship types?"] = "ShipTypes", ["ship types ?"] = "ShipTypes", ["ship type?"] = "ShipTypes", ["ship type ?"] = "ShipTypes",
+		["ships?"] = "ShipTypes", ["ships ?"] = "ShipTypes", ["ship?"] = "ShipTypes", ["ship ?"] = "ShipTypes",
+		["what ships"] = "ShipTypes", ["what ships?"] = "ShipTypes",
+		["how many"] = "Number", ["how many?"] = "Number",
+		["status?"] = "Status", ["status ?"] = "Status", ["status please"] = "Status", ["status pls"] = "Status",
+		["status"] = "Status", ["sts?"] = "Status", ["clr?"] = "Status",
+	};
+
+	/// <summary>키릴 동형이의 문자(с а е о р х у 등)를 라틴 문자로 치환 — "сlr"처럼 키릴 с가 섞인
+	/// 위장/오타 클리어 보고를 놓치지 않기 위함 (RIFT의 "cyrillic c" 방어를 일반화).</summary>
+	private static string NormalizeHomoglyphs(string s)
+	{
+		if (string.IsNullOrEmpty(s)) return s;
+		return s
+			.Replace('с', 'c') // с
+			.Replace('а', 'a') // а
+			.Replace('е', 'e') // е
+			.Replace('о', 'o') // о
+			.Replace('р', 'p') // р
+			.Replace('х', 'x') // х
+			.Replace('у', 'y') // у
+			.Replace('С', 'C')
+			.Replace('А', 'A')
+			.Replace('Е', 'E')
+			.Replace('О', 'O')
+			.Replace('Р', 'P')
+			.Replace('Х', 'X')
+			.Replace('У', 'Y');
+	}
 
 	public static ParsedIntelLine? ParseIntelLine(string line, SystemsDatabase systems, ShipDatabase ships, CharacterResolver? chars = null)
 	{
@@ -104,7 +178,7 @@ internal static class IntelParser
 			};
 		}
 
-		string lower = message.ToLowerInvariant();
+		string lower = NormalizeHomoglyphs(message.ToLowerInvariant());
 		bool isClear = false;
 		foreach (string w in ClearWords)
 		{
@@ -117,10 +191,14 @@ internal static class IntelParser
 			}
 		}
 
+		string questionKey = NormalizeHomoglyphs(message.Trim().ToLowerInvariant());
+		string? questionType = Questions.TryGetValue(questionKey, out string? qt) ? qt : null;
+
 		string[] rawTokens = message.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 		var used = new bool[rawTokens.Length];
 		var foundSystems = new List<string>();
 		var foundShips = new List<string>();
+		var systemHits = new List<(int start, int len, string name)>();
 		var sysSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var shipSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -138,6 +216,7 @@ internal static class IntelParser
 				{
 					if (sysSeen.Add(sys))
 						foundSystems.Add(sys);
+					systemHits.Add((i, len, sys));
 					MarkUsed(used, i, len);
 					continue;
 				}
@@ -154,6 +233,10 @@ internal static class IntelParser
 			}
 		}
 
+		(string system, bool isAnsiblex)? gate = TryFindGate(rawTokens, used, systemHits);
+		(string verb, string system, bool isGate)? movement = TryFindMovement(rawTokens, used, systemHits, gate);
+		(int count, bool isPlus, bool isExact)? hostileCount = TryFindStandaloneHostileCount(rawTokens, used);
+
 		// Character candidates from remaining tokens (1..3 word windows); skip speaker
 		var foundChars = new List<string>();
 		var charSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -167,7 +250,9 @@ internal static class IntelParser
 				Systems = foundSystems,
 				IsClear = true,
 				Raw = cleaned,
-				TimestampUtc = tsUtc
+				TimestampUtc = tsUtc,
+				IsQuestion = questionType is not null,
+				QuestionType = questionType
 			};
 		}
 		foreach (var (start, len) in SegmentCharacterCandidates(rawTokens, used, speaker, systems, ships, chars))
@@ -192,7 +277,17 @@ internal static class IntelParser
 			Characters = foundChars,
 			Ships = foundShips,
 			Raw = cleaned,
-			TimestampUtc = tsUtc
+			TimestampUtc = tsUtc,
+			HostileCount = hostileCount?.count,
+			HostileCountIsPlus = hostileCount?.isPlus ?? false,
+			HostileCountIsExact = hostileCount?.isExact ?? false,
+			GateSystem = gate?.system,
+			GateIsAnsiblex = gate?.isAnsiblex ?? false,
+			MovementVerb = movement?.verb,
+			MovementSystem = movement?.system,
+			MovementIsGate = movement?.isGate ?? false,
+			IsQuestion = questionType is not null,
+			QuestionType = questionType
 		};
 	}
 
@@ -201,7 +296,7 @@ internal static class IntelParser
 		if (string.IsNullOrWhiteSpace(token)) return true;
 		if (UrlRe.IsMatch(token)) return true;
 		if (QtyRe.IsMatch(token)) return true;
-		if (Slang.Contains(token)) return true;
+		if (Slang.Contains(token) || Slang.Contains(NormalizeHomoglyphs(token))) return true;
 		if (token.All(ch => !char.IsLetterOrDigit(ch))) return true;
 		return false;
 	}
@@ -251,6 +346,11 @@ internal static class IntelParser
 
 				CharResolveStatus status = chars?.GetStatus(phrase) ?? CharResolveStatus.Unknown;
 				if (status == CharResolveStatus.DoesNotExist) continue;
+				// ESI로 아직 미확인인 후보는 Title Case(단어별 대문자 시작)일 때만 점수를 준다.
+				// RIFT가 영단어 사전으로 걸러내는 "평범한 소문자 문장 조각"을 우리는 이 방식으로 배제 —
+				// 이미 실존 확인된(Exists) 이름은 신뢰할 수 있으므로 그대로 통과.
+				if (status != CharResolveStatus.Exists && !CharacterResolver.IsTitleCaseName(phrase))
+					continue;
 				// 단어 수에 따라 가중치를 크게 벌려, "1단어 조각 여러 개"가 "2~3단어 온전한 이름"보다
 				// 점수 합계에서 이기지 못하게 한다 (실존 확인 시 압도적으로 우선).
 				segScore[i, len] = status == CharResolveStatus.Exists
@@ -315,6 +415,106 @@ internal static class IntelParser
 		{
 			int? q = TryExtractQty(CleanToken(rawTokens[after]));
 			if (q is not null) { MarkUsed(used, after, 1); return q; }
+		}
+		return null;
+	}
+
+	/// <summary>"{성계} gate" / "{성계} ansiblex/ansi" — 성계 매칭 직후 토큰이 게이트 단어인지 확인 (RIFT findGates 포팅).</summary>
+	private static (string system, bool isAnsiblex)? TryFindGate(
+		string[] rawTokens, bool[] used, List<(int start, int len, string name)> systemHits)
+	{
+		foreach (var hit in systemHits)
+		{
+			int after = hit.start + hit.len;
+			if (after >= rawTokens.Length || used[after]) continue;
+			string word = CleanToken(rawTokens[after]);
+			if (GateWords.Contains(word))
+			{
+				used[after] = true;
+				return (hit.name, false);
+			}
+			if (AnsiblexWords.Contains(word))
+			{
+				used[after] = true;
+				return (hit.name, true);
+			}
+		}
+		return null;
+	}
+
+	/// <summary>"going/jumped/jumping {성계|게이트}" — 성계(또는 게이트) 매칭 직전 토큰이 이동 동사인지 확인 (RIFT findMovement 포팅).</summary>
+	private static (string verb, string system, bool isGate)? TryFindMovement(
+		string[] rawTokens, bool[] used, List<(int start, int len, string name)> systemHits,
+		(string system, bool isAnsiblex)? gate)
+	{
+		int? targetStart = null;
+		string? targetSystem = null;
+		bool isGate = false;
+		if (gate is not null)
+		{
+			var hit = systemHits.FirstOrDefault(h => string.Equals(h.name, gate.Value.system, StringComparison.OrdinalIgnoreCase));
+			if (hit.name is not null)
+			{
+				targetStart = hit.start;
+				targetSystem = gate.Value.system;
+				isGate = true;
+			}
+		}
+		if (targetStart is null && systemHits.Count > 0)
+		{
+			var hit = systemHits[0];
+			targetStart = hit.start;
+			targetSystem = hit.name;
+			isGate = false;
+		}
+		if (targetStart is null || targetSystem is null) return null;
+
+		int before = targetStart.Value - 1;
+		if (before < 0 || used[before]) return null;
+		string word = CleanToken(rawTokens[before]);
+		if (!MovementKeywords.Contains(word)) return null;
+		used[before] = true;
+		return (word, targetSystem, isGate);
+	}
+
+	/// <summary>함선명에 붙지 않은 독립 적 카운트 보고: "+5", "5+", "=15", "15 neuts" (RIFT의 COUNT_PLUS/EQUALS_REGEX 포팅).
+	/// "2x"/"x2"/"2*" 류는 함선 인접 수량 표기 전용이라 여기서는 다루지 않는다(오탐 방지).</summary>
+	private static (int count, bool isPlus, bool isExact)? TryFindStandaloneHostileCount(string[] rawTokens, bool[] used)
+	{
+		for (int i = 0; i < rawTokens.Length; i++)
+		{
+			if (used[i]) continue;
+			string tok = CleanToken(rawTokens[i]);
+
+			if (i + 1 < rawTokens.Length && !used[i + 1] &&
+			    int.TryParse(tok, out int nn) && nn > 0 && nn <= 999)
+			{
+				string next = CleanToken(rawTokens[i + 1]).ToLowerInvariant();
+				if (next is "neut" or "neuts")
+				{
+					used[i] = true;
+					used[i + 1] = true;
+					return (nn, false, true); // "N neuts" == RIFT의 COUNT_EQUALS_REGEX, 정확 카운트로 취급
+				}
+			}
+
+			var m = QtyCaptureRe.Match(tok);
+			if (!m.Success) continue;
+			if (m.Groups["n1"].Success && int.TryParse(m.Groups["n1"].Value, out int n1) && n1 > 0 && n1 <= 999)
+			{
+				used[i] = true;
+				return (n1, true, false); // "+N"
+			}
+			if (m.Groups["n2"].Success && int.TryParse(m.Groups["n2"].Value, out int n2) && n2 > 0 && n2 <= 999)
+			{
+				used[i] = true;
+				return (n2, true, false); // "N+"
+			}
+			if (m.Groups["n7"].Success && int.TryParse(m.Groups["n7"].Value, out int n7) && n7 > 0 && n7 <= 999)
+			{
+				used[i] = true;
+				return (n7, false, true); // "=N"
+			}
 		}
 		return null;
 	}

@@ -388,6 +388,15 @@ internal sealed class IntelLogView : Control
 			parts.Add((string.IsNullOrEmpty(ev.Character) ? "-" : ev.Character, ColCharacter));
 			parts.Add((" / ", ColSep));
 			parts.Add((string.IsNullOrEmpty(ev.Ship) ? "-" : ev.Ship, ColShip));
+			string extraStruct = ev.ExtraSuffix();
+			if (!string.IsNullOrEmpty(extraStruct))
+				parts.Add((extraStruct, ColAlert));
+			return parts;
+		}
+		string extra = ev.ExtraSuffix();
+		if (!string.IsNullOrEmpty(extra))
+		{
+			parts.Add((extra.TrimStart(' ', '·', ' '), ColAlert));
 			return parts;
 		}
 		string msg = string.IsNullOrEmpty(ev.Message) ? ev.Raw : ev.Message;
