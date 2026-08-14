@@ -128,12 +128,17 @@ internal sealed class IntelLogView : Control
 		return new Rectangle(0, top, w, HeightAt(index));
 	}
 
-	public bool HitTestIsCharacter(int index, Point clientPt)
+	/// <summary>클릭 지점이 캐릭터 이름 색상 글자 위라면 그 조각의 원문 텍스트를 반환한다.
+	/// 한 줄에 캐릭터가 여러 명("Bastilia, hubitus1")이면 Wrap()이 공백 기준으로 이미
+	/// 조각을 나눠두므로, 여기서 반환하는 텍스트는 "전체 캐릭터 필드"가 아니라 실제로
+	/// 클릭한 그 이름 조각(예: "hubitus1")이다 — 호출자가 이걸 넘겨야 클릭한 캐릭터로
+	/// zKill 링크가 열린다.</summary>
+	public string? HitTestCharacterText(int index, Point clientPt)
 	{
-		if (index < 0 || index >= _items.Count) return false;
+		if (index < 0 || index >= _items.Count) return null;
 		var ev = _items[index];
 		var itemRect = GetItemRectangle(index);
-		if (itemRect.IsEmpty) return false;
+		if (itemRect.IsEmpty) return null;
 
 		using var g = CreateGraphics();
 		int maxW = ContentWidth();
@@ -149,12 +154,12 @@ internal sealed class IntelLogView : Control
 				var sz = TextRenderer.MeasureText(g, text, Font, new Size(int.MaxValue, lineH), flags);
 				var r = new Rectangle(x, y, sz.Width, lineH);
 				if (r.Contains(clientPt) && color.ToArgb() == ColCharacter.ToArgb())
-					return true;
+					return text;
 				x += sz.Width;
 			}
 			y += lineH;
 		}
-		return false;
+		return null;
 	}
 
 	protected override void OnPaintBackground(PaintEventArgs pevent)

@@ -963,8 +963,12 @@ internal sealed class IntelPanel : NativeChildForm
 		var ev = _logList[index];
 		if (ev is null) return;
 
-		bool onCharacter = _logList.HitTestIsCharacter(index, _logClickPoint);
-		string charName = ZkillLinkHelper.NormalizeCharacterName(ev.Character);
+		// 클릭한 정확한 이름 조각(예: "Bastilia, hubitus1"에서 실제로 클릭한 쪽)을 우선 사용 —
+		// ev.Character를 통째로 쓰면 NormalizeCharacterName이 콤마 앞부분만 남겨서 항상
+		// 첫 번째 캐릭터로만 연결되던 문제가 있었다.
+		string? clickedCharacterChunk = _logList.HitTestCharacterText(index, _logClickPoint);
+		bool onCharacter = clickedCharacterChunk != null;
+		string charName = ZkillLinkHelper.NormalizeCharacterName(clickedCharacterChunk ?? ev.Character);
 		if (string.IsNullOrWhiteSpace(charName) || charName == "-")
 			charName = ZkillLinkHelper.NormalizeCharacterName(ev.Speaker);
 
