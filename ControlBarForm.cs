@@ -551,7 +551,10 @@ internal sealed class ControlBarForm : Form
 		ApplyZOrder();
 		try { if (_nav.IsHandleCreated) { _nav.Invalidate(false); _nav.Update(); } } catch { }
 		try { if (_autoRun.IsHandleCreated) { _autoRun.Invalidate(false); _autoRun.Update(); } } catch { }
-		try { if (_zkb.IsHandleCreated) { _zkb.Invalidate(false); _zkb.Update(); } } catch { }
+		// ZKB는 여기서 강제로 Invalidate+Update하지 않는다 — ZkbFeedPanel은 이제 자체적으로
+		// 5초 주기 RebuildIfChanged로 필요할 때만 다시 그리므로, 복원 시점에 여기서 한 번 더
+		// 강제로 건드리면 그 재생성 도중 상태가 그대로 화면에 노출되어 점멸로 보인다
+		// (1.07에서 같은 패턴을 이미 한 번 제거한 적이 있는데, 이후 다시 생긴 회귀였다).
 		if (_view == AppView.Intel)
 		{
 			try { if (_intel.IsHandleCreated) { _intel.Invalidate(false); _intel.Update(); } } catch { }

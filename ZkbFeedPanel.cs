@@ -185,9 +185,11 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 				ReparentToHost();
 				Visible = true;
 				ShowWindow(Handle, SW_SHOW);
-				// 방금 새로 보이게 됐다면 5초 주기를 기다리지 않고 바로 최신 상태를 그려준다 —
-				// 변경 없으면 RebuildIfChanged 내부에서 자체적으로 아무것도 안 건드리니 안전하다.
-				RebuildIfChanged();
+				// 방금 새로 보이게 된 시점(예: 최소화 후 복원 직후)은 원본 창 자체도 OS가
+				// 강제로 다시 그리는 중이라 컴포지터 경합이 심하다 — 그 자리에서 바로
+				// RebuildIfChanged를 동기 호출하면 Clear~재생성 중간 상태가 그대로 그려져
+				// 보일 수 있다(점멸). BeginInvoke로 한 틱 미뤄 그 경합 창을 피한다.
+				try { BeginInvoke(() => RebuildIfChanged()); } catch { }
 			}
 		}
 		else
