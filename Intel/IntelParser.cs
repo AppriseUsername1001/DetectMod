@@ -351,10 +351,55 @@ internal static class IntelParser
 				// 이미 실존 확인된(Exists) 이름은 신뢰할 수 있으므로 그대로 통과.
 				if (status != CharResolveStatus.Exists && !CharacterResolver.IsTitleCaseName(phrase))
 					continue;
+
+				// 점수 등급을 완전히 분리된 구간으로 둔다 (겹치면 아래에서 설명하는 역전 버그가 남는다):
+				//   3등급(가장 신뢰): len단어 조합 자체가 ESI로 실존 확인됨      → 100000×len
+				//   2등급:            "조합은 미확인이지만 단어 하나하나는 모두   →   1000×len + 500
+				//                      따로 실존 확인된 상태" — 아래 설명 참고
+				//   1등급:            단일 단어가 ESI로 실존 확인됨              →   1000 (len=1 전용)
+				//   0등급:            그 외 미확인 Title Case 후보               →  80/250/380
+				if (status == CharResolveStatus.Exists && len > 1)
+				{
+					segScore[i, len] = 100_000 * len;
+					continue;
+				}
+				if (len > 1 && status == CharResolveStatus.Unknown)
+				{
+					// 아직 이 조합 자체("Prime Dallocort")로는 ESI에 물어본 적이 없다 — 백그라운드로
+					// 큐에 넣어 결과를 캐시에 쌓는다. 나중에 이 조합이 실존 확인되면 위 3등급으로
+					// 넘어가 확실히 이기고, "존재 안 함"으로 확인되면 위의 DoesNotExist continue에
+					// 걸려 자동으로 개별 단어 분리로 복귀한다.
+					chars?.Enqueue(phrase);
+
+					// 이 자리의 개별 단어가 이미 각각 따로 실존 확인돼 있으면("Prime"도 실존,
+					// "Dallocort"도 실존하는 서로 다른 실제 캐릭터), 단순 합산 점수(1000×len, 1등급들의
+					// 합)가 아직 검증 안 된 이 조합의 기본 점수(0등급, 80~380)를 항상 이겨버려서
+					// "Firstname Lastname" 형태의 진짜 캐릭터명이 매번 낱말로 쪼개지는 문제가 있었다.
+					// EVE 캐릭터명 대부분이 2단어 형태이므로, 조합을 아직 안 물어봤을 땐 "개별
+					// 단어들이 우연히 각각 다른 실존 캐릭터와 겹치는 경우"보다 "하나의 2~3단어
+					// 이름"일 가능성을 우선한다 — 2등급 점수(1000×len+500)는 1등급 단어들의 합계
+					// (len×1000)보다는 항상 높고, 3등급(조합 자체 확인, 100000×len)보다는 항상 낮다.
+					bool allPartsExist = true;
+					for (int k = 0; k < len; k++)
+					{
+						string part = CleanToken(rawTokens[i + k]);
+						if ((chars?.GetStatus(part) ?? CharResolveStatus.Unknown) != CharResolveStatus.Exists)
+						{
+							allPartsExist = false;
+							break;
+						}
+					}
+					if (allPartsExist)
+					{
+						segScore[i, len] = 1000 * len + 500;
+						continue;
+					}
+				}
+
 				// 단어 수에 따라 가중치를 크게 벌려, "1단어 조각 여러 개"가 "2~3단어 온전한 이름"보다
-				// 점수 합계에서 이기지 못하게 한다 (실존 확인 시 압도적으로 우선).
+				// 점수 합계에서 이기지 못하게 한다.
 				segScore[i, len] = status == CharResolveStatus.Exists
-					? 1000
+					? 1000 // len == 1인 경우만 여기 도달 (len>1은 위에서 3등급으로 이미 처리)
 					: len switch { 1 => 80, 2 => 250, _ => 380 };
 			}
 		}
