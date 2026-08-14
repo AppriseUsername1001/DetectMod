@@ -238,7 +238,9 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	/// <summary>5초마다 호출. 현재 _items로부터 화면에 표시될 내용을 계산해, 마지막으로
 	/// 실제로 그린 내용과 다를 때만 리스트를 통째로(Clear + 재생성) 다시 그린다.
 	/// 변경이 없으면 네이티브 컨트롤을 아예 건드리지 않는다 — "새로운 정보가 없으면
-	/// 그대로 둔다"는 원칙. 스크롤 위치는 맨 위에 보이던 킬메일 ID로 다시 찾아 복원한다.</summary>
+	/// 그대로 둔다"는 원칙. 유저가 맨 위(최신)를 보고 있었다면 새로고침 후에도 계속
+	/// 맨 위에 고정되고(새 킬이 위로 계속 쌓여도 화면이 저절로 내려가지 않는다),
+	/// 휠로 과거 내용을 내려서 보고 있었다면 보던 킬메일 위치를 그대로 유지한다.</summary>
 	private void RebuildIfChanged(bool force = false)
 	{
 		if (IsDisposed || !_list.IsHandleCreated) return;
@@ -260,7 +262,8 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		if (!force && signature == _lastRenderedSignature) return;
 		_lastRenderedSignature = signature;
 
-		long? topKillmailId = (_list.TopItem?.Tag as ZkbLossEvent)?.KillmailId;
+		bool wasAtTop = _list.Items.Count == 0 || (_list.TopItem != null && _list.TopItem.Index == 0);
+		long? topKillmailId = wasAtTop ? null : (_list.TopItem?.Tag as ZkbLossEvent)?.KillmailId;
 
 		_list.BeginUpdate();
 		try
@@ -282,7 +285,11 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			_list.EndUpdate();
 		}
 
-		if (topKillmailId is long tid)
+		if (wasAtTop)
+		{
+			if (_list.Items.Count > 0) _list.TopItem = _list.Items[0];
+		}
+		else if (topKillmailId is long tid)
 		{
 			foreach (ListViewItem item in _list.Items)
 			{
