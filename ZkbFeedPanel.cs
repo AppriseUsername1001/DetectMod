@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using EVEAA.Mod.Intel;
 
 namespace EVEAA.Mod;
@@ -19,7 +18,6 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	private System.Windows.Forms.Timer? _redrawTimer;
 	private IntelEngine? _engine;
 	private bool _bound;
-	private string _lastRenderedSignature = "";
 
 	public ZkbFeedPanel(ModSettings settings)
 	{
@@ -235,50 +233,100 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		catch { }
 	}
 
-	/// <summary>5초마다 호출. 현재 _items로부터 화면에 표시될 내용을 계산해, 마지막으로
-	/// 실제로 그린 내용과 다를 때만 리스트를 통째로(Clear + 재생성) 다시 그린다.
-	/// 변경이 없으면 네이티브 컨트롤을 아예 건드리지 않는다 — "새로운 정보가 없으면
-	/// 그대로 둔다"는 원칙. 유저가 맨 위(최신)를 보고 있었다면 새로고침 후에도 계속
-	/// 맨 위에 고정되고(새 킬이 위로 계속 쌓여도 화면이 저절로 내려가지 않는다),
-	/// 휠로 과거 내용을 내려서 보고 있었다면 보던 킬메일 위치를 그대로 유지한다.</summary>
+	/// <summary>5초마다 호출. 현재 _items로부터 화면에 표시될 내용을 계산해 실제로 달라진
+	/// 부분만 건드린다 — 새 킬은 맨 위에 삽입만 하고, 기존에 이미 떠 있던 행은 "N분 전"
+	/// 갱신·ESI 이름 확정·색상 변경처럼 실제로 값이 바뀐 필드만 patch한다.
+	/// (예전엔 뭐가 하나라도 바뀌면 리스트 전체를 Clear + 재생성해서, 킬 하나 새로 들어올
+	/// 때마다 이미 떠 있던 나머지 행들까지 전부 다시 그려지며 화면 전체가 깜빡였다.)
+	/// 변경이 전혀 없으면 네이티브 컨트롤을 아예 건드리지 않는다. 유저가 맨 위(최신)를
+	/// 보고 있었다면 새로고침 후에도 계속 맨 위에 고정되고, 휠로 과거 내용을 내려서
+	/// 보고 있었다면 보던 킬메일 위치를 그대로 유지한다.</summary>
 	private void RebuildIfChanged(bool force = false)
 	{
 		if (IsDisposed || !_list.IsHandleCreated) return;
 
 		var rows = new List<(string time, string system, string jumps, string alliance, string ship, Color color, ZkbLossEvent ev)>(_items.Count);
-		var sig = new StringBuilder();
 		foreach (var ev in _items)
 		{
-			string time = FormatAgo(ev.KillTimeUtc);
-			string jumps = FormatJumps(ev.SystemName);
-			string alliance = ResolveAlliance(ev);
-			string ship = ResolveShip(ev);
-			Color color = RowBackColor(ev);
-			rows.Add((time, ev.SystemName, jumps, alliance, ship, color, ev));
-			sig.Append(ev.KillmailId).Append('|').Append(time).Append('|').Append(jumps).Append('|')
-				.Append(alliance).Append('|').Append(ship).Append('|').Append(color.ToArgb()).Append(';');
+			rows.Add((FormatAgo(ev.KillTimeUtc), ev.SystemName, FormatJumps(ev.SystemName),
+				ResolveAlliance(ev), ResolveShip(ev), RowBackColor(ev), ev));
 		}
-		string signature = sig.ToString();
-		if (!force && signature == _lastRenderedSignature) return;
-		_lastRenderedSignature = signature;
 
 		bool wasAtTop = _list.Items.Count == 0 || (_list.TopItem != null && _list.TopItem.Index == 0);
 		long? topKillmailId = wasAtTop ? null : (_list.TopItem?.Tag as ZkbLossEvent)?.KillmailId;
 
+		var existingIds = new HashSet<long>(_list.Items.Count);
+		foreach (ListViewItem existing in _list.Items)
+			if (existing.Tag is ZkbLossEvent existingEv) existingIds.Add(existingEv.KillmailId);
+
+		// _items는 항상 맨 앞에만 새 킬이 추가되고(OnLoss) 중간 삭제·재정렬은 없다 — 그러니
+		// 앞쪽에서부터 "아직 화면에 없는" 킬만 세면 그게 곧 새로 들어온 개수다.
+		int newCount = 0;
+		while (newCount < rows.Count && !existingIds.Contains(rows[newCount].ev.KillmailId))
+			newCount++;
+
+		// 화면에 이미 떠 있던 나머지가 정확히 같은 순서로 이어지는지 검증 — 하나라도 어긋나면
+		// (예상 못한 재정렬 등, 최초 로드 시에는 이 검사가 자연히 통과함) 안전하게 목록을
+		// 비우고 전부 새 행으로 취급한다.
+		bool tailValid = rows.Count - newCount == _list.Items.Count;
+		if (tailValid)
+		{
+			for (int j = 0; j < _list.Items.Count; j++)
+			{
+				if (_list.Items[j].Tag is not ZkbLossEvent tailEv || tailEv.KillmailId != rows[newCount + j].ev.KillmailId)
+				{
+					tailValid = false;
+					break;
+				}
+			}
+		}
+		bool needsClear = !tailValid && _list.Items.Count > 0;
+		if (!tailValid) newCount = rows.Count;
+
+		var fieldUpdates = new List<(ListViewItem item, string time, string jumps, string alliance, string ship, Color color)>();
+		if (tailValid)
+		{
+			for (int j = 0; j < _list.Items.Count; j++)
+			{
+				var item = _list.Items[j];
+				var r = rows[newCount + j];
+				if (item.SubItems[0].Text != r.time || item.SubItems[2].Text != r.jumps ||
+					item.SubItems[3].Text != r.alliance || item.SubItems[4].Text != r.ship ||
+					item.BackColor != r.color)
+				{
+					fieldUpdates.Add((item, r.time, r.jumps, r.alliance, r.ship, r.color));
+				}
+			}
+		}
+
+		if (!force && !needsClear && newCount == 0 && fieldUpdates.Count == 0) return;
+
 		_list.BeginUpdate();
 		try
 		{
-			_list.Items.Clear();
-			foreach (var r in rows)
+			// 꼬리 검증에 실패했을 때만(예상 못한 재정렬 등) 여기서 통째로 비운다 —
+			// BeginUpdate~EndUpdate 안에서 해야 이 Clear() 자체가 즉시 리페인트를 유발하지 않는다.
+			if (needsClear) _list.Items.Clear();
+			foreach (var (item, time, jumps, alliance, ship, color) in fieldUpdates)
 			{
-				var item = new ListViewItem(new[] { r.time, r.system, r.jumps, r.alliance, r.ship })
+				item.SubItems[0].Text = time;
+				item.SubItems[2].Text = jumps;
+				item.SubItems[3].Text = alliance;
+				item.SubItems[4].Text = ship;
+				item.BackColor = color;
+			}
+			for (int k = newCount - 1; k >= 0; k--)
+			{
+				var r = rows[k];
+				var newItem = new ListViewItem(new[] { r.time, r.system, r.jumps, r.alliance, r.ship })
 				{
 					Tag = r.ev,
 					ForeColor = r.ev.IsNpc ? Color.FromArgb(120, 120, 120) : Color.FromArgb(30, 30, 30),
 					BackColor = r.color
 				};
-				_list.Items.Add(item);
+				_list.Items.Insert(0, newItem);
 			}
+			while (_list.Items.Count > 300) _list.Items.RemoveAt(_list.Items.Count - 1);
 		}
 		finally
 		{
