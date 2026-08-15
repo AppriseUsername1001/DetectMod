@@ -37,6 +37,9 @@ internal sealed class IntelPanel : NativeChildForm
 	private NumericUpDown _mapZkbSec = null!;
 	private NumericUpDown _mapIntelSec = null!;
 	private NumericUpDown _mapFreshSec = null!;
+	private Button _btnIntelReportToggle = null!;
+	private Label _intelReportToggleStatus = null!;
+	private bool _intelReportEnabled;
 
 	public IntelPanel(ModSettings settings)
 	{
@@ -666,6 +669,44 @@ internal sealed class IntelPanel : NativeChildForm
 			_settings.Save();
 		});
 
+		// 인텔 서버 전송 (Intel Surveillance Program 리포터) — 알림음 토글과 동일 패턴
+		_intelReportEnabled = _settings.IntelReportEnabled;
+		var lblIntelReport = new Label
+		{
+			Text = "인텔전송",
+			Location = new Point(4, 300),
+			Size = new Size(52, 22),
+			TextAlign = ContentAlignment.MiddleLeft,
+			ForeColor = Color.FromArgb(50, 50, 50),
+			Font = new Font("맑은 고딕", 8f, FontStyle.Bold)
+		};
+		_btnIntelReportToggle = new Button
+		{
+			Location = new Point(56, 298),
+			Size = new Size(44, 26),
+			Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
+			Cursor = Cursors.Hand,
+			TabStop = false,
+			FlatStyle = FlatStyle.Flat,
+			UseVisualStyleBackColor = false
+		};
+		_btnIntelReportToggle.FlatAppearance.BorderSize = 1;
+		_btnIntelReportToggle.FlatAppearance.BorderColor = Color.FromArgb(60, 60, 60);
+		_btnIntelReportToggle.MouseDown += (_, e) =>
+		{
+			if (e.Button != MouseButtons.Left) return;
+			ToggleIntelReport();
+		};
+		_intelReportToggleStatus = new Label
+		{
+			Location = new Point(102, 300),
+			Size = new Size(120, 22),
+			TextAlign = ContentAlignment.MiddleLeft,
+			Font = new Font("맑은 고딕", 7.5f),
+			ForeColor = Color.FromArgb(80, 80, 80)
+		};
+		ApplyIntelReportToggleVisual();
+
 		rightCol.Controls.Add(lblJump);
 		rightCol.Controls.Add(lblPath);
 		rightCol.Controls.Add(_pathBox);
@@ -689,8 +730,12 @@ internal sealed class IntelPanel : NativeChildForm
 		rightCol.Controls.Add(lblI);
 		rightCol.Controls.Add(_mapFreshSec);
 		rightCol.Controls.Add(lblF);
+		rightCol.Controls.Add(lblIntelReport);
+		rightCol.Controls.Add(_btnIntelReportToggle);
+		rightCol.Controls.Add(_intelReportToggleStatus);
 		rightCol.Controls.Add(_btnSoundToggle);
 		_btnSoundToggle.BringToFront();
+		_btnIntelReportToggle.BringToFront();
 
 		// 중앙: 인텔 로그 (ZKB는 창 하단 별도 패널)
 		var centerCol = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(6) };
@@ -1045,6 +1090,34 @@ internal sealed class IntelPanel : NativeChildForm
 			if (_soundToggleStatus is not null) _soundToggleStatus.Text = "꺼짐";
 		}
 		_btnSoundToggle.Invalidate();
+	}
+
+	private void ToggleIntelReport()
+	{
+		_intelReportEnabled = !_intelReportEnabled;
+		_settings.IntelReportEnabled = _intelReportEnabled;
+		ApplyIntelReportToggleVisual();
+		_settings.Save();
+	}
+
+	private void ApplyIntelReportToggleVisual()
+	{
+		if (_btnIntelReportToggle is null) return;
+		if (_intelReportEnabled)
+		{
+			_btnIntelReportToggle.Text = "ON";
+			_btnIntelReportToggle.BackColor = Color.FromArgb(40, 160, 70);
+			_btnIntelReportToggle.ForeColor = Color.White;
+			if (_intelReportToggleStatus is not null) _intelReportToggleStatus.Text = "전송 중 (Vale Watch)";
+		}
+		else
+		{
+			_btnIntelReportToggle.Text = "OFF";
+			_btnIntelReportToggle.BackColor = Color.FromArgb(160, 60, 60);
+			_btnIntelReportToggle.ForeColor = Color.White;
+			if (_intelReportToggleStatus is not null) _intelReportToggleStatus.Text = "꺼짐";
+		}
+		_btnIntelReportToggle.Invalidate();
 	}
 
 	private void ApplyVolumeUi()
