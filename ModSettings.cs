@@ -40,6 +40,15 @@ internal sealed class ModSettings
 	/// <summary>0~100. 경보기 "알림음 테스트" 재생 볼륨.</summary>
 	public int AlarmSoundTestVolume { get; set; } = 80;
 
+	/// <summary>인텔 이벤트를 중앙 서버(디스코드 봇)로 전송할지. 기본 꺼짐(옵트인) — 이 모드는 외부 배포되므로 명시적 설정 없이는 아무 데도 전송하지 않음.</summary>
+	public bool IntelReportEnabled { get; set; }
+	/// <summary>인텔 수신 서버 base URL (예: https://hole-observer-xxxx.cloudtype.app). 비어있으면 전송 안 함.</summary>
+	public string? IntelReportUrl { get; set; }
+	/// <summary>인텔 수신 서버 인증용 공유 API 키.</summary>
+	public string? IntelReportApiKey { get; set; }
+	/// <summary>이 설치본을 식별하는 고정 ID. 최초 1회 자동 생성 후 저장됨.</summary>
+	public string? IntelReportClientId { get; set; }
+
 	private static string SettingsPath
 	{
 		get

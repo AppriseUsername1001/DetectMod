@@ -10,6 +10,7 @@ internal sealed class IntelPanel : NativeChildForm
 {
 	private readonly ModSettings _settings;
 	private readonly IntelEngine _engine = new();
+	private readonly IntelReporter _reporter;
 	private readonly Panel _loginPanel = new() { Dock = DockStyle.Fill, BackColor = Color.White };
 	private readonly Panel _dashPanel = new() { Dock = DockStyle.Fill, BackColor = Color.White, Visible = false };
 
@@ -40,6 +41,7 @@ internal sealed class IntelPanel : NativeChildForm
 	public IntelPanel(ModSettings settings)
 	{
 		_settings = settings;
+		_reporter = new IntelReporter(_settings);
 		BackColor = Color.White;
 		ClientSize = new Size(640, 400);
 		BuildLogin();
@@ -58,6 +60,7 @@ internal sealed class IntelPanel : NativeChildForm
 
 		_engine.LocationUpdated += OnLocationUpdated;
 		_engine.ThreatDetected += OnThreat;
+		_engine.ThreatDetected += _reporter.ReportThreat;
 		_engine.Status += msg =>
 		{
 			if (IsDisposed || !IsHandleCreated) { Debug.WriteLine(msg); return; }
@@ -1127,6 +1130,7 @@ internal sealed class IntelPanel : NativeChildForm
 		catch { }
 		_mapOverlay = null;
 		_engine.Dispose();
+		try { _reporter.Dispose(); } catch { }
 		try { _alertSound?.Dispose(); } catch { }
 		_alertSound = null;
 		base.OnFormClosed(e);
