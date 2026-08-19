@@ -20,6 +20,11 @@ internal sealed class ModSettings
 	/// <summary>인텔 로그에 점프 수를 표시할 대상으로 지정된 캐릭터. 0이면 미지정(목록의 첫 캐릭터로 대체).</summary>
 	public int IntelMainCharacterId { get; set; }
 
+	/// <summary>점프거리 표시/위치 추적 대상으로 지정된 캐릭터 — 없으면(또는 지정된 ID가 이미
+	/// 목록에서 빠졌으면) 목록의 첫 캐릭터로 대체. IntelPanel/ZkbFeedPanel이 공통으로 쓴다.</summary>
+	public TrackedCharacter? GetMainCharacter() =>
+		IntelCharacters.FirstOrDefault(c => c.CharacterId == IntelMainCharacterId) ?? IntelCharacters.FirstOrDefault();
+
 	public int JumpRange { get; set; } = 4;
 	public string? ChatlogsDir { get; set; }
 	public string? IntelChannel { get; set; }

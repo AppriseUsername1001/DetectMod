@@ -48,6 +48,7 @@ internal static class Program
 		CleanupOldVersionIfRequested(args);
 
 		ApplicationConfiguration.Initialize();
+		Application.AddMessageFilter(new ScrollWheelRouter());
 		Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 		Application.ThreadException += (_, e) =>
 		{

@@ -18,6 +18,12 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 	private System.Windows.Forms.Timer? _redrawTimer;
 	private IntelEngine? _engine;
 	private bool _bound;
+	private Panel _charListPanel = null!;
+
+	/// <summary>목록이 비게 되면 IntelPanel이 로그인 화면으로 돌아가야 한다.</summary>
+	public event Action? AllCharactersRemoved;
+	/// <summary>"+ 캐릭터 추가" 클릭 — 실제 SSO 로그인 흐름은 IntelPanel 소관이라 요청만 올린다.</summary>
+	public event Action? AddCharacterRequested;
 
 	public ZkbFeedPanel(ModSettings settings)
 	{
@@ -154,7 +160,19 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		_list.MouseWheel += (_, _) => _list.Invalidate();
 		_list.Resize += (_, _) => LayoutColumns();
 
-		inner.Controls.Add(_list);
+		// 좌측 1/3: 로그인된 캐릭터 목록 (경보기/인텔 알림 어느 탭에서도 항상 보이도록 여기 둔다).
+		// 우측 2/3: 기존 ZKB 리스트. 탭 전환과 무관하게 항상 보이는 자리라 캐릭터 전환 UI를
+		// 여기 두면 어느 화면에서든 바로 메인 캐릭터를 바꿀 수 있다.
+		var contentSplit = new Panel { Dock = DockStyle.Fill };
+		_charListPanel = new Panel { Dock = DockStyle.Left, Width = 240, AutoScroll = true, BackColor = Color.White };
+		var charListDivider = new Panel { Dock = DockStyle.Left, Width = 1, BackColor = Color.FromArgb(210, 210, 210) };
+		contentSplit.Resize += (_, _) =>
+			_charListPanel.Width = Math.Max(140, contentSplit.Width / 3);
+		contentSplit.Controls.Add(_list);
+		contentSplit.Controls.Add(charListDivider);
+		contentSplit.Controls.Add(_charListPanel);
+
+		inner.Controls.Add(contentSplit);
 		inner.Controls.Add(head);
 		outer.Controls.Add(inner);
 		Controls.Add(outer);
@@ -217,6 +235,154 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		_redrawTimer = new System.Windows.Forms.Timer { Interval = 5000 };
 		_redrawTimer.Tick += (_, _) => RebuildIfChanged();
 		_redrawTimer.Start();
+		RebuildCharacterList();
+	}
+
+	/// <summary>클릭한 캐릭터를 점프거리 표시/위치 추적 대상("메인")으로 지정한다. 알림(경고음)은
+	/// 이후 단계에서 캐릭터별로 각자 독립 처리할 예정 — 지금은 메인 캐릭터 기준으로 위치·
+	/// 점프거리만 갱신한다.</summary>
+	private void SelectMainCharacter(TrackedCharacter c)
+	{
+		_settings.IntelMainCharacterId = c.CharacterId;
+		_settings.Save();
+		c.ExpiresAt = DateTimeOffset.UtcNow; // 즉시 새로 갱신되도록
+		_engine?.SetCharacter(c);
+		_engine?.Start();
+		_ = _engine?.RefreshLocationAsync(); // IntelPanel은 IntelEngine.LocationUpdated로 자기 화면을 갱신
+		RebuildCharacterList();
+	}
+
+	/// <summary>목록에서 캐릭터를 제거(로그아웃)한다. 제거 대상이 메인이었다면 남은 캐릭터 중
+	/// 하나로 메인을 자동 교체하고, 아무도 안 남으면 AllCharactersRemoved로 알린다
+	/// (로그인 화면 전환은 IntelPanel 소관이라 직접 건드리지 않는다).</summary>
+	public void RemoveCharacter(TrackedCharacter c)
+	{
+		_settings.IntelCharacters.RemoveAll(x => x.CharacterId == c.CharacterId);
+		if (_settings.IntelMainCharacterId == c.CharacterId)
+			_settings.IntelMainCharacterId = _settings.IntelCharacters.FirstOrDefault()?.CharacterId ?? 0;
+		_settings.Save();
+
+		var newMain = _settings.GetMainCharacter();
+		if (newMain is null)
+		{
+			_engine?.Stop();
+			_engine?.SetCharacter(null);
+			RebuildCharacterList();
+			AllCharactersRemoved?.Invoke();
+		}
+		else
+		{
+			SelectMainCharacter(newMain);
+		}
+	}
+
+	/// <summary>IntelPanel의 로그인 흐름이 캐릭터를 추가/이관한 뒤 호출한다.</summary>
+	public void RefreshCharacterList() => RebuildCharacterList();
+
+	private static readonly Color MainCharBorder = Color.FromArgb(60, 180, 90);
+	private static readonly Color OtherCharBorder = Color.FromArgb(210, 210, 210);
+
+	/// <summary>좌측 캐릭터 목록을 현재 _settings.IntelCharacters로 다시 그린다 — 메인 캐릭터는
+	/// 초록 테두리로, 그 외는 회색 테두리로 표시한다.</summary>
+	private void RebuildCharacterList()
+	{
+		if (_charListPanel is null) return;
+		_charListPanel.SuspendLayout();
+		foreach (Control old in _charListPanel.Controls) old.Dispose();
+		_charListPanel.Controls.Clear();
+
+		int y = 4;
+		int mainId = _settings.GetMainCharacter()?.CharacterId ?? 0;
+		foreach (var c in _settings.IntelCharacters)
+		{
+			var row = BuildCharacterRow(c, c.CharacterId == mainId);
+			row.Location = new Point(4, y);
+			_charListPanel.Controls.Add(row);
+			y += row.Height + 4;
+		}
+
+		var addBtn = new Button
+		{
+			Text = "+ 캐릭터 추가",
+			Location = new Point(4, y),
+			Size = new Size(214, 26),
+			FlatStyle = FlatStyle.Flat,
+			Font = new Font("맑은 고딕", 8.5f),
+			Cursor = Cursors.Hand,
+			TabStop = false
+		};
+		addBtn.FlatAppearance.BorderSize = 1;
+		addBtn.Click += (_, _) => AddCharacterRequested?.Invoke();
+		_charListPanel.Controls.Add(addBtn);
+
+		_charListPanel.ResumeLayout();
+	}
+
+	private Panel BuildCharacterRow(TrackedCharacter c, bool isMain)
+	{
+		var outer = new Panel
+		{
+			Size = new Size(214, 40),
+			BackColor = isMain ? MainCharBorder : OtherCharBorder,
+			Padding = new Padding(2),
+			Cursor = Cursors.Hand,
+			Tag = c
+		};
+		var inner = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+
+		var pic = new PictureBox
+		{
+			Size = new Size(32, 32),
+			Location = new Point(2, 2),
+			SizeMode = PictureBoxSizeMode.Zoom,
+			BackColor = Color.Gainsboro
+		};
+		try { pic.LoadAsync($"https://images.evetech.net/characters/{c.CharacterId}/portrait?size=64"); } catch { }
+
+		var nameLbl = new Label
+		{
+			Text = c.CharacterName,
+			Location = new Point(40, 3),
+			Size = new Size(146, 18),
+			Font = new Font("맑은 고딕", 8.5f, isMain ? FontStyle.Bold : FontStyle.Regular),
+			TextAlign = ContentAlignment.MiddleLeft,
+			AutoEllipsis = true
+		};
+		var subLbl = new Label
+		{
+			Text = isMain ? "★ 점프거리 표시 중" : "클릭: 점프거리 표시 대상으로 지정",
+			Location = new Point(40, 21),
+			Size = new Size(146, 14),
+			Font = new Font("맑은 고딕", 7f),
+			ForeColor = isMain ? MainCharBorder : Color.FromArgb(120, 120, 120),
+			AutoEllipsis = true
+		};
+		var removeBtn = new Button
+		{
+			Text = "x",
+			Location = new Point(190, 2),
+			Size = new Size(20, 20),
+			Font = new Font("맑은 고딕", 7.5f),
+			FlatStyle = FlatStyle.Flat,
+			Cursor = Cursors.Hand,
+			TabStop = false,
+			ForeColor = Color.FromArgb(150, 60, 60)
+		};
+		removeBtn.FlatAppearance.BorderSize = 0;
+		removeBtn.Click += (_, _) => RemoveCharacter(c);
+
+		void SelectHandler(object? s, EventArgs e) => SelectMainCharacter(c);
+		inner.Click += SelectHandler;
+		pic.Click += SelectHandler;
+		nameLbl.Click += SelectHandler;
+		subLbl.Click += SelectHandler;
+
+		inner.Controls.Add(pic);
+		inner.Controls.Add(nameLbl);
+		inner.Controls.Add(subLbl);
+		inner.Controls.Add(removeBtn);
+		outer.Controls.Add(inner);
+		return outer;
 	}
 
 	private void OnLoss(ZkbLossEvent ev)
@@ -332,6 +498,9 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		{
 			_list.EndUpdate();
 		}
+		// EndUpdate 후에도 맨 아래쪽에 이전 항목의 잔상(예: "8"처럼 숫자 일부만 남는 파편)이
+		// 그대로 남을 때가 있다 — 항목 수가 줄거나 위치가 바뀐 뒤 특히 잘 보임. 강제 재그리기로 정리.
+		_list.Invalidate();
 
 		if (wasAtTop)
 		{

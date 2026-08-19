@@ -92,6 +92,9 @@ internal sealed class ControlBarForm : Form
 		_intel.SetVisible(false);
 		_zkb.Attach(hwnd);
 		_zkb.Bind(_intel.Engine);
+		_intel.ZkbPanel = _zkb;
+		_zkb.AddCharacterRequested += _intel.RequestAddCharacter;
+		_zkb.AllCharactersRemoved += _intel.ShowLoginScreen;
 
 		_ourHandles.Clear();
 		_ourHandles.Add(_nav.Handle);
