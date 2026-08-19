@@ -6,6 +6,8 @@ namespace EVEAA.Mod;
 
 internal static class Program
 {
+	private static Mutex? _singleInstanceMutex;
+
 	[STAThread]
 	private static void Main(string[] args)
 	{
@@ -30,6 +32,16 @@ internal static class Program
 		if (EveWatcher.IsWatchMode(args))
 		{
 			EveWatcher.RunWatchLoop();
+			return;
+		}
+
+		if (!TryAcquireSingleInstance())
+		{
+			MessageBox.Show(
+				"EVEDetectmod가 이미 실행 중입니다.\n중복 실행할 수 없습니다.",
+				"EVEDetectmod",
+				MessageBoxButtons.OK,
+				MessageBoxIcon.Information);
 			return;
 		}
 
@@ -177,6 +189,25 @@ internal static class Program
 		ControlBarForm bar = new(settings);
 		bar.AttachToEveaa(proc, existing);
 		Application.Run(bar);
+	}
+
+	/// <summary>
+	/// EVEDetectmod가 이미 하나 떠 있으면(버전 무관) 새 인스턴스 실행을 거부한다. 자동
+	/// 업데이트로 새 버전이 뜨는 경우(--cleanup-old) 구버전이 막 Close() 중이라 뮤텍스가
+	/// 아주 잠깐 남아있을 수 있어, 몇 초간은 재시도해서 정상적인 업데이트 흐름을 막지 않는다.
+	/// </summary>
+	private static bool TryAcquireSingleInstance()
+	{
+		_singleInstanceMutex = new Mutex(initiallyOwned: false, "Local\\EVEDetectmod_SingleInstance", out _);
+		try
+		{
+			return _singleInstanceMutex.WaitOne(TimeSpan.FromSeconds(8));
+		}
+		catch (AbandonedMutexException)
+		{
+			// 이전 인스턴스가 비정상 종료(크래시 등)해서 뮤텍스를 놓친 경우 — 우리가 이어받는다.
+			return true;
+		}
 	}
 
 	private static IntPtr WaitForEveaaWindow(Process proc, TimeSpan timeout)

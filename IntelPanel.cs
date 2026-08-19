@@ -155,6 +155,7 @@ internal sealed class IntelPanel : NativeChildForm
 				ExpiresAt = DateTimeOffset.UtcNow // force refresh
 			});
 			ShowDashboard();
+			MaybeAskIntelReportConsent();
 			_ = BootstrapAsync();
 		}
 		else
@@ -784,6 +785,7 @@ internal sealed class IntelPanel : NativeChildForm
 			_settings.IntelAccessToken = c.AccessToken;
 			_settings.Save();
 			ShowDashboard();
+			MaybeAskIntelReportConsent();
 			_engine.Start();
 		}
 		catch (Exception ex)
@@ -1090,6 +1092,30 @@ internal sealed class IntelPanel : NativeChildForm
 			if (_soundToggleStatus is not null) _soundToggleStatus.Text = "꺼짐";
 		}
 		_btnSoundToggle.Invalidate();
+	}
+
+	/// <summary>인텔 로그인 성공 직후(최초 1회만) 서버 전송 동의를 물어본다. 이미 물어본 적
+	/// 있으면(수락/거절 여부와 무관) 아무 것도 하지 않는다 — 이후엔 대시보드의 "인텔전송"
+	/// 토글로 언제든 직접 켜고 끌 수 있다.</summary>
+	private void MaybeAskIntelReportConsent()
+	{
+		if (_settings.IntelReportConsentAsked) return;
+		_settings.IntelReportConsentAsked = true;
+
+		var result = MessageBox.Show(this,
+			"인텔 로그(성계·캐릭터·함선 등 인텔 채널에서 인식된 정보)를 중앙 서버로 전송해\n" +
+			"함대 추적 등에 활용하는 데 동의하시겠습니까?\n\n" +
+			"동의하시면 인텔 로그만 서버로 전송됩니다. (ZKB Feed, 위치 등 다른 정보는 전송되지 않음)\n" +
+			"거절하시면 아무 것도 전송되지 않습니다.\n\n" +
+			"이 선택은 나중에 언제든 대시보드의 \"인텔전송\" 버튼으로 다시 바꿀 수 있습니다.",
+			"인텔 로그 서버 전송 동의",
+			MessageBoxButtons.YesNo,
+			MessageBoxIcon.Question);
+
+		_intelReportEnabled = result == DialogResult.Yes;
+		_settings.IntelReportEnabled = _intelReportEnabled;
+		ApplyIntelReportToggleVisual();
+		_settings.Save();
 	}
 
 	private void ToggleIntelReport()

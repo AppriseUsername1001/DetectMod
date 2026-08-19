@@ -48,6 +48,9 @@ internal sealed class ModSettings
 	public string? IntelReportApiKey { get; set; } = "0053a25135139abc3d202fce997b1836";
 	/// <summary>이 설치본을 식별하는 고정 ID. 최초 1회 자동 생성 후 저장됨.</summary>
 	public string? IntelReportClientId { get; set; }
+	/// <summary>인텔 로그 서버 전송 동의 알림문을 이미 한 번 물어봤는지. true가 되면 이후
+	/// 로그인 때마다 다시 묻지 않는다 — 이 시점의 선택은 IntelReportEnabled에 반영됨.</summary>
+	public bool IntelReportConsentAsked { get; set; }
 
 	private static string SettingsPath
 	{
