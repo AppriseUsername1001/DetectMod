@@ -449,7 +449,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		bool needsClear = !tailValid && _list.Items.Count > 0;
 		if (!tailValid) newCount = rows.Count;
 
-		var fieldUpdates = new List<(ListViewItem item, string time, string jumps, string alliance, string ship, Color color)>();
+		var fieldUpdates = new List<(int index, string time, string system, string jumps, string alliance, string ship, Color color, ZkbLossEvent ev)>();
 		if (tailValid)
 		{
 			for (int j = 0; j < _list.Items.Count; j++)
@@ -460,7 +460,7 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 					item.SubItems[3].Text != r.alliance || item.SubItems[4].Text != r.ship ||
 					item.BackColor != r.color)
 				{
-					fieldUpdates.Add((item, r.time, r.jumps, r.alliance, r.ship, r.color));
+					fieldUpdates.Add((j, r.time, r.system, r.jumps, r.alliance, r.ship, r.color, r.ev));
 				}
 			}
 		}
@@ -473,13 +473,21 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 			// 꼬리 검증에 실패했을 때만(예상 못한 재정렬 등) 여기서 통째로 비운다 —
 			// BeginUpdate~EndUpdate 안에서 해야 이 Clear() 자체가 즉시 리페인트를 유발하지 않는다.
 			if (needsClear) _list.Items.Clear();
-			foreach (var (item, time, jumps, alliance, ship, color) in fieldUpdates)
+			// 기존 행을 SubItems[i].Text 여러 번 나눠 건드리면(예전 방식) 그 사이 어딘가에서
+			// 네이티브 페인트가 끼어들 경우 Time/System만 반영되고 Alliance/Ship은 아직
+			// 이전 프레임 그대로인 "반쪽만 갱신된" 상태가 한 프레임 화면에 실제로 그려질 수
+			// 있다(BeginUpdate/EndUpdate가 이 앱의 크로스프로세스 네이티브 임베딩 환경에서
+			// 100% 완벽하게 억제하지 못하는 사례가 이 프로젝트 히스토리에 여럿 있었다) —
+			// 행 전체를 새로 만들어 인덱서로 통째로 교체하면 네이티브 갱신 호출이 한 번으로
+			// 줄어 그 경합 창이 좁아진다.
+			foreach (var (index, time, system, jumps, alliance, ship, color, ev) in fieldUpdates)
 			{
-				item.SubItems[0].Text = time;
-				item.SubItems[2].Text = jumps;
-				item.SubItems[3].Text = alliance;
-				item.SubItems[4].Text = ship;
-				item.BackColor = color;
+				_list.Items[index] = new ListViewItem(new[] { time, system, jumps, alliance, ship })
+				{
+					Tag = ev,
+					ForeColor = ev.IsNpc ? Color.FromArgb(120, 120, 120) : Color.FromArgb(30, 30, 30),
+					BackColor = color
+				};
 			}
 			for (int k = newCount - 1; k >= 0; k--)
 			{
