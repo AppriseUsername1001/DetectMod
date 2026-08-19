@@ -498,9 +498,6 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 		{
 			_list.EndUpdate();
 		}
-		// EndUpdate 후에도 맨 아래쪽에 이전 항목의 잔상(예: "8"처럼 숫자 일부만 남는 파편)이
-		// 그대로 남을 때가 있다 — 항목 수가 줄거나 위치가 바뀐 뒤 특히 잘 보임. 강제 재그리기로 정리.
-		_list.Invalidate();
 
 		if (wasAtTop)
 		{
@@ -517,6 +514,10 @@ internal sealed class ZkbFeedPanel : NativeChildForm
 				}
 			}
 		}
+		// TopItem까지 다 맞춘 "최종" 상태 기준으로 딱 한 번만 강제 재그리기 — EndUpdate 직후
+		// TopItem 조정 전에 Invalidate하면 조정 전 스크롤 위치가 잠깐 그려질 여지가 생긴다
+		// (예전 항목의 잔상, 예: "8"처럼 숫자 일부만 남는 파편, 방지 목적은 동일).
+		_list.Invalidate();
 	}
 
 	/// <summary>감시 캐릭터와 같은 얼라이언스면 설정된 저채도 색, 아니면 그 외 색. 내 얼라이언스를 아직 모르면 기본 흰색.</summary>

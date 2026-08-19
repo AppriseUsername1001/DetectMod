@@ -348,8 +348,11 @@ internal static class IntelParser
 				if (status == CharResolveStatus.DoesNotExist) continue;
 				// ESI로 아직 미확인인 후보는 Title Case(단어별 대문자 시작)일 때만 점수를 준다.
 				// RIFT가 영단어 사전으로 걸러내는 "평범한 소문자 문장 조각"을 우리는 이 방식으로 배제 —
-				// 이미 실존 확인된(Exists) 이름은 신뢰할 수 있으므로 그대로 통과.
-				if (status != CharResolveStatus.Exists && !CharacterResolver.IsTitleCaseName(phrase))
+				// 이미 실존 확인된(Exists) 이름은 신뢰할 수 있으므로 그대로 통과. 예외: 숫자가 섞인
+				// 토큰("heqiya3" 같은 부계정/알트 이름 흔한 패턴)은 평범한 영단어일 수 없으므로
+				// Title Case가 아니어도 후보로 인정 — 그래야 첫 등장에도 바로 ESI 조회 큐에 들어간다.
+				if (status != CharResolveStatus.Exists && !CharacterResolver.IsTitleCaseName(phrase)
+					&& !phrase.Any(char.IsDigit))
 					continue;
 
 				// 점수 등급을 완전히 분리된 구간으로 둔다 (겹치면 아래에서 설명하는 역전 버그가 남는다):

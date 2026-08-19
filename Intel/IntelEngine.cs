@@ -101,6 +101,12 @@ internal sealed class IntelEngine : IDisposable
 	private readonly EsiNameCache _esiNames = new();
 	private readonly ZkbFeedService _zkb;
 	private readonly Dictionary<string, DateTime> _cooldown = new(StringComparer.OrdinalIgnoreCase);
+	/// <summary>화자별 마지막으로 언급된 성계/캐릭터 — "IPAY-2 Moonlord"와 "Drake Navy Issue"처럼
+	/// 같은 사람이 정보를 채팅 두 줄로 나눠 올릴 때, 성계·캐릭터가 없는(함선만 있는) 후속 줄에
+	/// 짧은 시간 내로 이어붙여 보완한다.</summary>
+	private readonly Dictionary<string, (List<string> systems, List<string> characters, DateTime utc)> _speakerContext =
+		new(StringComparer.OrdinalIgnoreCase);
+	private const double SpeakerCarryForwardSec = 90;
 	private CancellationTokenSource? _cts;
 	private Task? _loop;
 	private string? _lastActiveLog;
@@ -323,7 +329,34 @@ internal sealed class IntelEngine : IDisposable
 
 		foreach (var item in _chat.Poll(_systems, _ships, _chars))
 		{
-			string character = item.Characters.Count > 0 ? string.Join(", ", item.Characters) : "";
+			List<string> effSystems = item.Systems;
+			List<string> effChars = item.Characters;
+
+			// 같은 화자가 채팅 두 줄에 나눠 보고하는 경우 보완: 이번 줄에 성계·캐릭터가 아예
+			// 없고(함선만 있거나 등) clear/kill 보고도 아니면, 그 화자가 직전에(짧은 시간 내로)
+			// 언급한 성계·캐릭터를 이어붙여 표시용으로만 사용한다 — ESI 큐잉(EnqueueMany)이나
+			// 원본 raw 텍스트는 건드리지 않는다.
+			if (!item.IsClear && !item.IsKillReport && !string.IsNullOrEmpty(item.Speaker))
+			{
+				DateTime nowRef = item.TimestampUtc ?? DateTime.UtcNow;
+				if (item.Systems.Count > 0 || item.Characters.Count > 0)
+				{
+					_speakerContext.TryGetValue(item.Speaker, out var prev);
+					_speakerContext[item.Speaker] = (
+						item.Systems.Count > 0 ? item.Systems : prev.systems ?? new List<string>(),
+						item.Characters.Count > 0 ? item.Characters : prev.characters ?? new List<string>(),
+						nowRef);
+				}
+				else if (item.Ships.Count > 0 &&
+				         _speakerContext.TryGetValue(item.Speaker, out var ctx) &&
+				         (nowRef - ctx.utc).TotalSeconds is >= 0 and <= SpeakerCarryForwardSec)
+				{
+					if (ctx.systems.Count > 0) effSystems = ctx.systems;
+					if (ctx.characters.Count > 0) effChars = ctx.characters;
+				}
+			}
+
+			string character = effChars.Count > 0 ? string.Join(", ", effChars) : "";
 			string ship = item.Ships.Count > 0 ? string.Join(", ", item.Ships) : "";
 			if (item.Characters.Count > 0)
 				_chars.EnqueueMany(item.Characters);
@@ -332,13 +365,13 @@ internal sealed class IntelEngine : IDisposable
 			int bestDist = -1;
 			bool isAlert = false;
 
-			if (systemsReady && item.Systems.Count > 0)
+			if (systemsReady && effSystems.Count > 0)
 			{
 				if (hasLoc)
 				{
 					int nearest = int.MaxValue;
 					string? nearestSys = null;
-					foreach (string sys in item.Systems)
+					foreach (string sys in effSystems)
 					{
 						int? dist = _jump.Distance(Character!.LocationSystem, sys);
 						if (dist is null) continue;
@@ -348,20 +381,20 @@ internal sealed class IntelEngine : IDisposable
 							nearestSys = sys;
 						}
 					}
-					bestSys = nearestSys ?? item.Systems[0];
+					bestSys = nearestSys ?? effSystems[0];
 					bestDist = nearestSys is null ? -1 : nearest;
 					isAlert = nearestSys is not null && nearest <= JumpRange;
 				}
 				else
 				{
-					bestSys = string.Join(", ", item.Systems);
+					bestSys = string.Join(", ", effSystems);
 					bestDist = -1;
 					isAlert = true;
 				}
 			}
-			else if (item.Systems.Count > 0)
+			else if (effSystems.Count > 0)
 			{
-				bestSys = string.Join(", ", item.Systems);
+				bestSys = string.Join(", ", effSystems);
 			}
 
 			if (isAlert && !string.IsNullOrEmpty(bestSys))
