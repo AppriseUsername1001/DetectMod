@@ -1,4 +1,5 @@
 using System.Text.Json;
+using EVEAA.Mod.Intel;
 
 namespace EVEAA.Mod;
 
@@ -7,10 +8,18 @@ internal sealed class ModSettings
 	public bool LaunchWithEve { get; set; }
 	public string? EveaaExePath { get; set; }
 
+	// 구버전(단일 캐릭터) 필드 — 마이그레이션 전용으로 남겨둠. Load()에서 IntelCharacters가
+	// 비어있고 이 필드에 로그인 정보가 있으면 1회 이관 후 더는 쓰이지 않는다.
 	public int IntelCharacterId { get; set; }
 	public string? IntelCharacterName { get; set; }
 	public string? IntelRefreshToken { get; set; }
 	public string? IntelAccessToken { get; set; }
+
+	/// <summary>로그인된 전체 캐릭터 목록 — 캐릭터별 알림(경고음)은 각자 독립적으로 동작한다.</summary>
+	public List<TrackedCharacter> IntelCharacters { get; set; } = new();
+	/// <summary>인텔 로그에 점프 수를 표시할 대상으로 지정된 캐릭터. 0이면 미지정(목록의 첫 캐릭터로 대체).</summary>
+	public int IntelMainCharacterId { get; set; }
+
 	public int JumpRange { get; set; } = 4;
 	public string? ChatlogsDir { get; set; }
 	public string? IntelChannel { get; set; }
@@ -69,11 +78,30 @@ internal sealed class ModSettings
 			{
 				ModSettings? s = JsonSerializer.Deserialize<ModSettings>(File.ReadAllText(SettingsPath));
 				if (s != null)
+				{
+					s.MigrateSingleCharacterIfNeeded();
 					return s;
+				}
 			}
 		}
 		catch { }
 		return new ModSettings();
+	}
+
+	/// <summary>구버전 단일 캐릭터 필드에 로그인 정보가 있고 새 리스트가 비어있으면
+	/// 1회 이관한다 — 이미 이 기능이 있는 상태로 설치됐다면 아무 것도 하지 않는다.</summary>
+	private void MigrateSingleCharacterIfNeeded()
+	{
+		if (IntelCharacters.Count > 0) return;
+		if (IntelCharacterId <= 0 || string.IsNullOrEmpty(IntelRefreshToken)) return;
+		IntelCharacters.Add(new TrackedCharacter
+		{
+			CharacterId = IntelCharacterId,
+			CharacterName = IntelCharacterName ?? "",
+			RefreshToken = IntelRefreshToken,
+			AccessToken = IntelAccessToken ?? ""
+		});
+		IntelMainCharacterId = IntelCharacterId;
 	}
 
 	public void Save()

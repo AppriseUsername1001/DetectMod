@@ -40,6 +40,12 @@ internal sealed class IntelPanel : NativeChildForm
 	private Button _btnIntelReportToggle = null!;
 	private Label _intelReportToggleStatus = null!;
 	private bool _intelReportEnabled;
+	private Panel _charListPanel = null!;
+
+	/// <summary>점프거리 표시 대상으로 지정된 캐릭터 — 없으면 목록의 첫 캐릭터로 대체.</summary>
+	private TrackedCharacter? MainCharacter =>
+		_settings.IntelCharacters.FirstOrDefault(c => c.CharacterId == _settings.IntelMainCharacterId)
+		?? _settings.IntelCharacters.FirstOrDefault();
 
 	public IntelPanel(ModSettings settings)
 	{
@@ -110,7 +116,7 @@ internal sealed class IntelPanel : NativeChildForm
 			// 반복하면 원본 창의 형제 컨트롤 리페인트가 깨질 수 있다.
 			if (!IsShownInHost)
 				ReparentToHost();
-			if (_settings.IntelCharacterId > 0 && !string.IsNullOrEmpty(_settings.IntelRefreshToken))
+			if (MainCharacter is not null)
 				_engine.Start();
 			try { _logList?.ForceRepaint(); } catch { }
 		}
@@ -144,17 +150,13 @@ internal sealed class IntelPanel : NativeChildForm
 			_engine.PinChatLog(hit);
 		}
 
-		if (_settings.IntelCharacterId > 0 && !string.IsNullOrEmpty(_settings.IntelRefreshToken))
+		var main = MainCharacter;
+		if (main is not null)
 		{
-			_engine.SetCharacter(new TrackedCharacter
-			{
-				CharacterId = _settings.IntelCharacterId,
-				CharacterName = _settings.IntelCharacterName ?? "",
-				RefreshToken = _settings.IntelRefreshToken,
-				AccessToken = _settings.IntelAccessToken ?? "",
-				ExpiresAt = DateTimeOffset.UtcNow // force refresh
-			});
+			main.ExpiresAt = DateTimeOffset.UtcNow; // force refresh
+			_engine.SetCharacter(main);
 			ShowDashboard();
+			RebuildCharacterList();
 			MaybeAskIntelReportConsent();
 			_ = BootstrapAsync();
 		}
@@ -317,14 +319,8 @@ internal sealed class IntelPanel : NativeChildForm
 		logout.FlatAppearance.BorderSize = 0;
 		logout.Click += (_, _) =>
 		{
-			_engine.Stop();
-			_engine.SetCharacter(null);
-			_settings.IntelCharacterId = 0;
-			_settings.IntelRefreshToken = "";
-			_settings.IntelAccessToken = "";
-			_settings.IntelCharacterName = "";
-			_settings.Save();
-			ShowLogin();
+			var main = MainCharacter;
+			if (main is not null) RemoveCharacter(main);
 		};
 		logoutInner.Padding = new Padding(4, 2, 4, 2);
 		logoutInner.Controls.Add(logout);
@@ -708,6 +704,24 @@ internal sealed class IntelPanel : NativeChildForm
 		};
 		ApplyIntelReportToggleVisual();
 
+		// 로그인된 캐릭터 목록 — 클릭한 캐릭터가 인텔 로그의 점프거리 표시 대상("메인")이 된다.
+		var lblChars = new Label
+		{
+			Text = "캐릭터 (클릭: 점프거리 표시 대상 지정)",
+			Location = new Point(4, 336),
+			AutoSize = true,
+			Font = new Font("맑은 고딕", 7.5f, FontStyle.Bold),
+			ForeColor = Color.FromArgb(40, 40, 40)
+		};
+		_charListPanel = new Panel
+		{
+			Location = new Point(4, 356),
+			Size = new Size(220, 1)
+		};
+		rightCol.Controls.Add(lblChars);
+		rightCol.Controls.Add(_charListPanel);
+		RebuildCharacterList();
+
 		rightCol.Controls.Add(lblJump);
 		rightCol.Controls.Add(lblPath);
 		rightCol.Controls.Add(_pathBox);
@@ -779,13 +793,24 @@ internal sealed class IntelPanel : NativeChildForm
 			await _engine.LoginAsync();
 			var c = _engine.Character;
 			if (c is null) return;
-			_settings.IntelCharacterId = c.CharacterId;
-			_settings.IntelCharacterName = c.CharacterName;
-			_settings.IntelRefreshToken = c.RefreshToken;
-			_settings.IntelAccessToken = c.AccessToken;
+
+			_settings.IntelCharacters.RemoveAll(x => x.CharacterId == c.CharacterId);
+			_settings.IntelCharacters.Add(c);
+			bool isFirst = _settings.IntelCharacters.Count == 1;
+			if (isFirst) _settings.IntelMainCharacterId = c.CharacterId;
 			_settings.Save();
+
 			ShowDashboard();
 			MaybeAskIntelReportConsent();
+
+			if (!isFirst)
+			{
+				// 방금 로그인한 캐릭터가 메인이 아니면, 엔진은 계속 기존 메인 캐릭터를 추적한다 —
+				// "캐릭터 추가"는 로그인만 하는 것이지 자동으로 점프거리 표시 대상이 되는 게 아니다.
+				var main = MainCharacter;
+				if (main is not null) _engine.SetCharacter(main);
+			}
+			RebuildCharacterList();
 			_engine.Start();
 		}
 		catch (Exception ex)
@@ -1097,6 +1122,150 @@ internal sealed class IntelPanel : NativeChildForm
 	/// <summary>인텔 로그인 성공 직후(최초 1회만) 서버 전송 동의를 물어본다. 이미 물어본 적
 	/// 있으면(수락/거절 여부와 무관) 아무 것도 하지 않는다 — 이후엔 대시보드의 "인텔전송"
 	/// 토글로 언제든 직접 켜고 끌 수 있다.</summary>
+	/// <summary>클릭한 캐릭터를 점프거리 표시/위치 추적 대상("메인")으로 지정한다.
+	/// 알림(경고음)은 이후 단계에서 캐릭터별로 각자 독립 처리할 예정 — 지금은 메인 캐릭터
+	/// 기준으로 위치·점프거리만 갱신한다.</summary>
+	private void SelectMainCharacter(TrackedCharacter c)
+	{
+		_settings.IntelMainCharacterId = c.CharacterId;
+		_settings.Save();
+		c.ExpiresAt = DateTimeOffset.UtcNow; // 즉시 새로 갱신되도록
+		_engine.SetCharacter(c);
+		UpdateDashboardUi();
+		RebuildCharacterList();
+		_ = BootstrapAsync();
+	}
+
+	/// <summary>목록에서 캐릭터를 제거(로그아웃)한다. 제거 대상이 메인이었다면 남은 캐릭터 중
+	/// 하나로 메인을 자동 교체하고, 아무도 안 남으면 로그인 화면으로 돌아간다.</summary>
+	private void RemoveCharacter(TrackedCharacter c)
+	{
+		_settings.IntelCharacters.RemoveAll(x => x.CharacterId == c.CharacterId);
+		if (_settings.IntelMainCharacterId == c.CharacterId)
+			_settings.IntelMainCharacterId = _settings.IntelCharacters.FirstOrDefault()?.CharacterId ?? 0;
+		_settings.Save();
+
+		var newMain = MainCharacter;
+		if (newMain is null)
+		{
+			_engine.Stop();
+			_engine.SetCharacter(null);
+			ShowLogin();
+		}
+		else
+		{
+			SelectMainCharacter(newMain);
+		}
+	}
+
+	/// <summary>우측 패널 하단의 캐릭터 목록을 현재 _settings.IntelCharacters로 다시 그린다 —
+	/// 메인 캐릭터는 초록 테두리로, 그 외는 회색 테두리로 표시한다.</summary>
+	private void RebuildCharacterList()
+	{
+		if (_charListPanel is null) return;
+		_charListPanel.SuspendLayout();
+		foreach (Control old in _charListPanel.Controls) old.Dispose();
+		_charListPanel.Controls.Clear();
+
+		int y = 0;
+		int mainId = MainCharacter?.CharacterId ?? 0;
+		foreach (var c in _settings.IntelCharacters)
+		{
+			var row = BuildCharacterRow(c, c.CharacterId == mainId);
+			row.Location = new Point(0, y);
+			_charListPanel.Controls.Add(row);
+			y += row.Height + 4;
+		}
+
+		var addBtn = new Button
+		{
+			Text = "+ 캐릭터 추가",
+			Location = new Point(0, y),
+			Size = new Size(214, 26),
+			FlatStyle = FlatStyle.Flat,
+			Font = new Font("맑은 고딕", 8.5f),
+			Cursor = Cursors.Hand,
+			TabStop = false
+		};
+		addBtn.FlatAppearance.BorderSize = 1;
+		addBtn.Click += async (_, _) => await DoLoginAsync();
+		_charListPanel.Controls.Add(addBtn);
+		y += addBtn.Height;
+
+		_charListPanel.Size = new Size(220, Math.Max(1, y));
+		_charListPanel.ResumeLayout();
+	}
+
+	private static readonly Color MainCharBorder = Color.FromArgb(60, 180, 90);
+	private static readonly Color OtherCharBorder = Color.FromArgb(210, 210, 210);
+
+	private Panel BuildCharacterRow(TrackedCharacter c, bool isMain)
+	{
+		var outer = new Panel
+		{
+			Size = new Size(214, 40),
+			BackColor = isMain ? MainCharBorder : OtherCharBorder,
+			Padding = new Padding(2),
+			Cursor = Cursors.Hand,
+			Tag = c
+		};
+		var inner = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+
+		var pic = new PictureBox
+		{
+			Size = new Size(32, 32),
+			Location = new Point(2, 2),
+			SizeMode = PictureBoxSizeMode.Zoom,
+			BackColor = Color.Gainsboro
+		};
+		try { pic.LoadAsync($"https://images.evetech.net/characters/{c.CharacterId}/portrait?size=64"); } catch { }
+
+		var nameLbl = new Label
+		{
+			Text = c.CharacterName,
+			Location = new Point(40, 3),
+			Size = new Size(146, 18),
+			Font = new Font("맑은 고딕", 8.5f, isMain ? FontStyle.Bold : FontStyle.Regular),
+			TextAlign = ContentAlignment.MiddleLeft,
+			AutoEllipsis = true
+		};
+		var subLbl = new Label
+		{
+			Text = isMain ? "★ 점프거리 표시 중" : "클릭: 점프거리 표시 대상으로 지정",
+			Location = new Point(40, 21),
+			Size = new Size(146, 14),
+			Font = new Font("맑은 고딕", 7f),
+			ForeColor = isMain ? MainCharBorder : Color.FromArgb(120, 120, 120),
+			AutoEllipsis = true
+		};
+		var removeBtn = new Button
+		{
+			Text = "x",
+			Location = new Point(190, 2),
+			Size = new Size(20, 20),
+			Font = new Font("맑은 고딕", 7.5f),
+			FlatStyle = FlatStyle.Flat,
+			Cursor = Cursors.Hand,
+			TabStop = false,
+			ForeColor = Color.FromArgb(150, 60, 60)
+		};
+		removeBtn.FlatAppearance.BorderSize = 0;
+		removeBtn.Click += (_, _) => RemoveCharacter(c);
+
+		void SelectHandler(object? s, EventArgs e) => SelectMainCharacter(c);
+		inner.Click += SelectHandler;
+		pic.Click += SelectHandler;
+		nameLbl.Click += SelectHandler;
+		subLbl.Click += SelectHandler;
+
+		inner.Controls.Add(pic);
+		inner.Controls.Add(nameLbl);
+		inner.Controls.Add(subLbl);
+		inner.Controls.Add(removeBtn);
+		outer.Controls.Add(inner);
+		return outer;
+	}
+
 	private void MaybeAskIntelReportConsent()
 	{
 		if (_settings.IntelReportConsentAsked) return;
