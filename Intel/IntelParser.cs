@@ -234,6 +234,38 @@ internal static class IntelParser
 			}
 		}
 
+		// 성계 매칭은 코드형(대시/숫자 포함, 예: "ZA0L-U") 토큰과 평범한 단어형 성계명(예:
+		// "Aihaken")을 구분 없이 그리디하게 처리한다 — 그런데 "Corto Aihaken"처럼 캐릭터의
+		// 성(姓)이 우연히 실존하는(평범한 이름의) 성계명과 겹치면, 그 성계 매칭이 캐릭터 이름을
+		// 통째로 갈라놓고 심지어 "가장 가까운 성계" 로직에서 진짜 보고된 성계를 밀어내기까지
+		// 한다. 같은 줄에 이미 코드형 성계가 따로 있다면(=진짜 위치 보고는 이미 확보됨) 그 옆에
+		// 아직 안 쓰인 Title Case 단어가 붙어있는 단어형 성계 매칭은 캐릭터 이름의 일부일 가능성이
+		// 훨씬 높다고 보고 되돌려, 뒤이은 캐릭터 후보 분할이 그 토큰을 다시 쓸 수 있게 한다.
+		if (systemHits.Count > 1 && systemHits.Any(h => IsCodeLikeSystemToken(rawTokens[h.start])))
+		{
+			for (int hi = systemHits.Count - 1; hi >= 0; hi--)
+			{
+				var hit = systemHits[hi];
+				if (hit.len != 1 || IsCodeLikeSystemToken(rawTokens[hit.start]))
+					continue;
+
+				bool adjacentTitleCase =
+					(hit.start > 0 && !used[hit.start - 1] &&
+					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start - 1]))) ||
+					(hit.start + 1 < rawTokens.Length && !used[hit.start + 1] &&
+					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start + 1])));
+				if (!adjacentTitleCase) continue;
+
+				used[hit.start] = false;
+				systemHits.RemoveAt(hi);
+				if (!systemHits.Exists(h => string.Equals(h.name, hit.name, StringComparison.OrdinalIgnoreCase)))
+				{
+					foundSystems.RemoveAll(s => string.Equals(s, hit.name, StringComparison.OrdinalIgnoreCase));
+					sysSeen.Remove(hit.name);
+				}
+			}
+		}
+
 		(string system, bool isAnsiblex)? gate = TryFindGate(rawTokens, used, systemHits);
 		(string verb, string system, bool isGate)? movement = TryFindMovement(rawTokens, used, systemHits, gate);
 		(int count, bool isPlus, bool isExact)? hostileCount = TryFindStandaloneHostileCount(rawTokens, used);
@@ -300,6 +332,14 @@ internal static class IntelParser
 		if (Slang.Contains(token) || Slang.Contains(NormalizeHomoglyphs(token))) return true;
 		if (token.All(ch => !char.IsLetterOrDigit(ch))) return true;
 		return false;
+	}
+
+	/// <summary>SystemsDatabase.MatchName의 codeLike 판정과 동일한 기준(대시 또는 숫자 포함)을
+	/// 정리된 토큰 기준으로 재사용 — 널섹/웜홀식 성계 코드는 캐릭터 성씨와 겹칠 일이 없다.</summary>
+	private static bool IsCodeLikeSystemToken(string rawToken)
+	{
+		string t = CleanToken(rawToken);
+		return t.IndexOf('-') >= 0 || t.Any(char.IsDigit);
 	}
 
 	private static string JoinTokens(string[] tokens, int start, int len)
