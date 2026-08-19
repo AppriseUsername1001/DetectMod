@@ -360,10 +360,12 @@ internal static class IntelParser
 
 				// 점수 등급을 완전히 분리된 구간으로 둔다 (겹치면 아래에서 설명하는 역전 버그가 남는다):
 				//   3등급(가장 신뢰): len단어 조합 자체가 ESI로 실존 확인됨      → 100000×len
-				//   2등급:            "조합은 미확인이지만 단어 하나하나는 모두   →   1000×len + 500
+				//   2b등급:           "조합은 미확인이지만 단어 하나하나는 모두   →   1000×len + 500
 				//                      따로 실존 확인된 상태" — 아래 설명 참고
+				//   2a등급:           len>1, Title Case, 조합 미확인, 단어 일부만  → 1000×(len-1) + 500
+				//                      (또는 전혀) 실존 확인 — 아래 설명 참고
 				//   1등급:            단일 단어가 ESI로 실존 확인됨              →   1000 (len=1 전용)
-				//   0등급:            그 외 미확인 Title Case 후보               →  80/250/380
+				//   0등급:            그 외 미확인 Title Case 후보(단일 단어뿐)   →   80
 				if (status == CharResolveStatus.Exists && len > 1)
 				{
 					segScore[i, len] = 100_000 * len;
@@ -400,13 +402,19 @@ internal static class IntelParser
 						segScore[i, len] = 1000 * len + 500;
 						continue;
 					}
+
+					// "Erador Sul"/"Erstrella Rust"처럼 단어 하나만(혹은 하나도) 우연히 다른 실존
+					// 캐릭터와 겹치는 경우 — 위 allPartsExist 분기와 같은 이유로, 조합 자체는 아직
+					// 미확인이라도 Title Case인 이상 "겹치는 단어 하나 + 나머지 단어 추측(0등급)"
+					// 합계보다 항상 높은 점수를 준다. len개 중 최대 (len-1)개까지만 우연히 개별
+					// 실존확인 상태일 수 있으므로(전부 다면 위 allPartsExist에서 이미 처리됨),
+					// 그 최악의 분리 합계(1000×(len-1) + 80)보다 확실히 높게 잡는다.
+					segScore[i, len] = 1000 * (len - 1) + 500;
+					continue;
 				}
 
-				// 단어 수에 따라 가중치를 크게 벌려, "1단어 조각 여러 개"가 "2~3단어 온전한 이름"보다
-				// 점수 합계에서 이기지 못하게 한다.
-				segScore[i, len] = status == CharResolveStatus.Exists
-					? 1000 // len == 1인 경우만 여기 도달 (len>1은 위에서 3등급으로 이미 처리)
-					: len switch { 1 => 80, 2 => 250, _ => 380 };
+				// len == 1만 여기 도달 (len>1은 위에서 3/2b/2a등급으로 이미 전부 처리됨).
+				segScore[i, len] = status == CharResolveStatus.Exists ? 1000 : 80;
 			}
 		}
 
