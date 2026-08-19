@@ -63,7 +63,8 @@ internal static class IntelParser
 		"haha", "ok", "okay", "please", "thanks", "thank", "here", "there", "what", "why",
 		"who", "when", "where", "how", "can", "could", "would", "should", "will", "not",
 		"dont", "im", "its", "up", "down", "out", "over", "under", "again", "still", "just",
-		"like", "so", "but", "if", "then", "than", "guys", "everyone", "anyone", "someone"
+		"like", "so", "but", "if", "then", "than", "guys", "everyone", "anyone", "someone",
+		"back"
 	};
 
 	private static readonly Regex QtyRe = new(@"^(\+\d+|\d+\+|\d+x|x\d+|\*\d+|\d+\*|=?\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
