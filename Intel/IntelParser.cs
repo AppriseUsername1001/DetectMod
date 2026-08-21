@@ -201,6 +201,7 @@ internal static class IntelParser
 		var foundSystems = new List<string>();
 		var foundShips = new List<string>();
 		var systemHits = new List<(int start, int len, string name)>();
+		var shipHits = new List<(int start, int len, string name, string display)>();
 		var sysSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var shipSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -229,6 +230,7 @@ internal static class IntelParser
 					MarkUsed(used, i, len);
 					int? qty = TryConsumeAdjacentQty(rawTokens, used, i, len);
 					string display = qty is int n && n > 1 ? $"{ship} x{n}" : ship;
+					shipHits.Add((i, len, ship, display));
 					if (shipSeen.Add(ship))
 						foundShips.Add(display);
 				}
@@ -263,6 +265,37 @@ internal static class IntelParser
 				{
 					foundSystems.RemoveAll(s => string.Equals(s, hit.name, StringComparison.OrdinalIgnoreCase));
 					sysSeen.Remove(hit.name);
+				}
+			}
+		}
+
+		// 함선 매칭도 같은 이유로 캐릭터 이름을 가로챌 수 있다 — 예: "Star Maelstrom (Prospect)"에서
+		// "Maelstrom"은 캐릭터의 성(姓)이지만 동시에 실제 전함 이름이기도 하다. "(ShipName)" 괄호
+		// 표기는 EVE 인텔 채널에서 함선을 명시하는 흔한 관용구라 신뢰도가 높다 — 그런 괄호 표기
+		// 함선이 같은 줄에 따로 있다면(=진짜 함선 정보는 이미 확보됨), 괄호 없이 홑토큰으로 잡힌
+		// 다른 함선 매칭이 아직 안 쓰인 Title Case 단어 옆에 붙어있을 때 캐릭터 이름의 일부일
+		// 가능성이 더 높다고 보고 되돌린다.
+		if (shipHits.Count > 1 && shipHits.Any(h => IsParenthesizedToken(rawTokens, h.start, h.len)))
+		{
+			for (int hi = shipHits.Count - 1; hi >= 0; hi--)
+			{
+				var hit = shipHits[hi];
+				if (hit.len != 1 || IsParenthesizedToken(rawTokens, hit.start, hit.len))
+					continue;
+
+				bool adjacentTitleCase =
+					(hit.start > 0 && !used[hit.start - 1] &&
+					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start - 1]))) ||
+					(hit.start + 1 < rawTokens.Length && !used[hit.start + 1] &&
+					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start + 1])));
+				if (!adjacentTitleCase) continue;
+
+				used[hit.start] = false;
+				shipHits.RemoveAt(hi);
+				if (!shipHits.Exists(h => string.Equals(h.name, hit.name, StringComparison.OrdinalIgnoreCase)))
+				{
+					foundShips.RemoveAll(s => string.Equals(s, hit.display, StringComparison.OrdinalIgnoreCase));
+					shipSeen.Remove(hit.name);
 				}
 			}
 		}
@@ -343,6 +376,15 @@ internal static class IntelParser
 		return t.IndexOf('-') >= 0 || t.Any(char.IsDigit);
 	}
 
+	/// <summary>토큰 범위가 "(...)" 괄호로 감싸여 있는지 — EVE 인텔 채널의 "Name (ShipType)" 관용구
+	/// 함선 표기를 원본(정리 전) 토큰 기준으로 판별한다.</summary>
+	private static bool IsParenthesizedToken(string[] rawTokens, int start, int len)
+	{
+		if (start < 0 || start >= rawTokens.Length) return false;
+		int end = Math.Min(start + len - 1, rawTokens.Length - 1);
+		return rawTokens[start].Contains('(') && rawTokens[end].Contains(')');
+	}
+
 	private static string JoinTokens(string[] tokens, int start, int len)
 	{
 		if (len == 1) return CleanToken(tokens[start]);
@@ -401,10 +443,7 @@ internal static class IntelParser
 
 				// 점수 등급을 완전히 분리된 구간으로 둔다 (겹치면 아래에서 설명하는 역전 버그가 남는다):
 				//   3등급(가장 신뢰): len단어 조합 자체가 ESI로 실존 확인됨      → 100000×len
-				//   2b등급:           "조합은 미확인이지만 단어 하나하나는 모두   →   1000×len + 500
-				//                      따로 실존 확인된 상태" — 아래 설명 참고
-				//   2a등급:           len>1, Title Case, 조합 미확인, 단어 일부만  → 1000×(len-1) + 500
-				//                      (또는 전혀) 실존 확인 — 아래 설명 참고
+				//   2등급:            len>1, Title Case, 조합은 아직 미확인      → 1000×(len-1) + 500
 				//   1등급:            단일 단어가 ESI로 실존 확인됨              →   1000 (len=1 전용)
 				//   0등급:            그 외 미확인 Title Case 후보(단일 단어뿐)   →   80
 				if (status == CharResolveStatus.Exists && len > 1)
@@ -420,36 +459,15 @@ internal static class IntelParser
 					// 걸려 자동으로 개별 단어 분리로 복귀한다.
 					chars?.Enqueue(phrase);
 
-					// 이 자리의 개별 단어가 이미 각각 따로 실존 확인돼 있으면("Prime"도 실존,
-					// "Dallocort"도 실존하는 서로 다른 실제 캐릭터), 단순 합산 점수(1000×len, 1등급들의
-					// 합)가 아직 검증 안 된 이 조합의 기본 점수(0등급, 80~380)를 항상 이겨버려서
-					// "Firstname Lastname" 형태의 진짜 캐릭터명이 매번 낱말로 쪼개지는 문제가 있었다.
-					// EVE 캐릭터명 대부분이 2단어 형태이므로, 조합을 아직 안 물어봤을 땐 "개별
-					// 단어들이 우연히 각각 다른 실존 캐릭터와 겹치는 경우"보다 "하나의 2~3단어
-					// 이름"일 가능성을 우선한다 — 2등급 점수(1000×len+500)는 1등급 단어들의 합계
-					// (len×1000)보다는 항상 높고, 3등급(조합 자체 확인, 100000×len)보다는 항상 낮다.
-					bool allPartsExist = true;
-					for (int k = 0; k < len; k++)
-					{
-						string part = CleanToken(rawTokens[i + k]);
-						if ((chars?.GetStatus(part) ?? CharResolveStatus.Unknown) != CharResolveStatus.Exists)
-						{
-							allPartsExist = false;
-							break;
-						}
-					}
-					if (allPartsExist)
-					{
-						segScore[i, len] = 1000 * len + 500;
-						continue;
-					}
-
-					// "Erador Sul"/"Erstrella Rust"처럼 단어 하나만(혹은 하나도) 우연히 다른 실존
-					// 캐릭터와 겹치는 경우 — 위 allPartsExist 분기와 같은 이유로, 조합 자체는 아직
-					// 미확인이라도 Title Case인 이상 "겹치는 단어 하나 + 나머지 단어 추측(0등급)"
-					// 합계보다 항상 높은 점수를 준다. len개 중 최대 (len-1)개까지만 우연히 개별
-					// 실존확인 상태일 수 있으므로(전부 다면 위 allPartsExist에서 이미 처리됨),
-					// 그 최악의 분리 합계(1000×(len-1) + 80)보다 확실히 높게 잡는다.
+					// "Erador Sul"처럼 단어 하나만 우연히 다른 실존 캐릭터와 겹치는 경우엔 병합을
+					// 우선(합산 최악값 1000×(len-1)+80보다 이 점수가 항상 높음)하되, "Bastilia
+					// Neekee"처럼 단어 둘 다 각각 이미 다른 실존 캐릭터로 확인된 경우는 오히려 분리를
+					// 기본값으로 둔다(합산 1000×len이 이 점수보다 항상 높음) — 사용자 판단: 이
+					// 시그널(조합 미확인 + 부분 일치)만으론 "우연히 겹치는 두 사람"과 "진짜 2단어
+					// 이름인데 각 부분도 따로 실존"을 구분할 수 없고(Prime Dallocort는 후자, Bastilia
+					// Neekee는 전자 — 둘 다 ESI로 직접 확인됨), 첫 등장에 잘못 합쳐서 서로 다른 두
+					// 사람을 한 명으로 보이게 하는 쪽이 더 나쁘다고 판단해 분리를 기본값으로 선택함.
+					// 조합 자체가 ESI로 실존 확인되면(위 3등급) 다음 등장부터는 정확히 병합된다.
 					segScore[i, len] = 1000 * (len - 1) + 500;
 					continue;
 				}
