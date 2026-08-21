@@ -49,7 +49,7 @@ internal static class IntelParser
 	private static readonly HashSet<string> Slang = new(StringComparer.OrdinalIgnoreCase)
 	{
 		"nv", "clr", "clear", "c", "gc", "wh", "wormhole", "k162", "spike", "ess", "skyhook",
-		"cloaked", "cloaky", "cloak", "theft", "planet",
+		"cloaked", "cloaky", "cloak", "theft", "planet", "warp", "warping", "warped", "thrower",
 		"bubble", "bubbles", "neut", "neuts", "hostile", "hostiles", "blue", "blues",
 		"red", "reds", "gate", "camp", "probes", "combat", "dscan", "status", "status?",
 		"?", "+", "-", "x", "xx", "xxx", "and", "or", "the", "a", "an", "in", "on", "at",
