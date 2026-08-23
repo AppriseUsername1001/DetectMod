@@ -654,13 +654,24 @@ internal sealed class ControlBarForm : Form
 	private string? FindAlertSoundName()
 	{
 		if (_targetHwnd == IntPtr.Zero || !IsWindow(_targetHwnd)) return null;
+		if (_eveaaProcess is null) return null;
+		uint eveaaPid = (uint)_eveaaProcess.Id;
 
 		IntPtr labelHwnd = IntPtr.Zero;
 		RECT labelRect = default;
 		var editCandidates = new List<(IntPtr hwnd, RECT rect)>();
 
+		// EnumChildWindows는 손자 창까지 재귀적으로 훑는다 — _targetHwnd에는 원본 EVEAA의
+		// 네이티브 컨트롤뿐 아니라 우리 모드 자신의 크로스프로세스 임베딩 창(IntelPanel 등)의
+		// 자손 컨트롤도 함께 걸린다. 그래서 인텔 알림 탭에서는 "인텔전송" 옆 지도 Z/인/강
+		// 스핀박스의 내부 Edit(예: "90")가 화면상 "경고음" 라벨과 같은 줄에 우연히 겹쳐서
+		// 그게 대신 골라지는 버그가 있었다 — 원본 EVEAA 프로세스 소유 창만 보도록 프로세스
+		// ID로 걸러 우리 모드 자신의 컨트롤을 원천적으로 배제한다.
 		EnumChildWindows(_targetHwnd, (hwnd, _) =>
 		{
+			GetWindowThreadProcessId(hwnd, out uint ownerPid);
+			if (ownerPid != eveaaPid) return true;
+
 			var cls = new StringBuilder(64);
 			GetClassName(hwnd, cls, 64);
 			string className = cls.ToString();
@@ -975,6 +986,7 @@ internal sealed class ControlBarForm : Form
 	[DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
 	[DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
 	[DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, int gaFlags);
+	[DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 	[DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 	[DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr hWnd, EnumWindowsProc lpEnumFunc, IntPtr lParam);
 	[DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr hWnd);
