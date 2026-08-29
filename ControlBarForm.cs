@@ -708,31 +708,34 @@ internal sealed class ControlBarForm : Form
 		return null;
 	}
 
+	/// <summary>알림음 wav 개별 파일 경로. 예전엔 원본 EVEAA exe가 있는 위치 기준으로
+	/// 찾았는데, 원본 exe는 사용자가 자유롭게 옮길 수 있고(설정에 저장된 경로가 실제
+	/// 실행 중인 사본과 달라지기도 함) 애초에 sound/ 폴더는 원본 게임이 아니라 우리
+	/// 모드가 배포하는 리소스다 — 우리 모드 자신의 exe 옆, 없으면 내장 리소스 추출
+	/// 위치(BundledAssets)를 본다. 디렉터리 존재 여부가 아니라 "그 파일이 실제로
+	/// 있는지"로 판단해야 한다 — exe 옆 sound/ 폴더가 있어도 사용자가 일부 wav만
+	/// 남기고 지운 경우(예: pop.wav만 있고 BEEP.wav는 없음) 폴더 존재 체크만으론
+	/// 여전히 못 찾는다. IntelPanel.DefaultAlertSoundPath()와 동일한 전략.</summary>
+	private static string ResolveSoundFile(string fileName)
+	{
+		string baseDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+		string besideExe = Path.Combine(baseDir, "sound", fileName);
+		if (File.Exists(besideExe)) return besideExe;
+		return Path.Combine(BundledAssets.ExtractedRoot, "sound", fileName);
+	}
+
 	/// <summary>ZKB 패널 "알림음 테스트" 버튼 — 경보기 쪽 현재 선택된 경고음을 1회 재생.</summary>
 	private void TestAlarmAlertSound()
 	{
 		try
 		{
-			string? exeDir = null;
-			if (!string.IsNullOrEmpty(_settings.EveaaExePath))
-				exeDir = Path.GetDirectoryName(_settings.EveaaExePath);
-			if (string.IsNullOrEmpty(exeDir) && _eveaaProcess is not null)
-			{
-				try { exeDir = Path.GetDirectoryName(_eveaaProcess.MainModule?.FileName); } catch { }
-			}
-			if (string.IsNullOrEmpty(exeDir))
-			{
-				MessageBox.Show("원본 EVEAA 위치를 찾을 수 없습니다.", "알림음 테스트", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-				return;
-			}
-
 			// "경고음 선택" Edit는 사용자가 브라우즈로 커스텀 파일을 고를 때만 채워지고,
 			// 기본값(BEEP)일 때는 비어 있는 것으로 보인다 — 비어 있으면 기본 BEEP로 테스트한다.
 			string? name = FindAlertSoundName();
 			string path;
 			if (string.IsNullOrWhiteSpace(name))
 			{
-				path = Path.Combine(exeDir, "sound", "BEEP.wav");
+				path = ResolveSoundFile("BEEP.wav");
 			}
 			else if (File.Exists(name))
 			{
@@ -744,7 +747,7 @@ internal sealed class ControlBarForm : Form
 				string trimmed = name.Trim();
 				if (Path.GetExtension(trimmed).Length > 0)
 					trimmed = Path.GetFileNameWithoutExtension(trimmed);
-				path = Path.Combine(exeDir, "sound", trimmed + ".wav");
+				path = ResolveSoundFile(trimmed + ".wav");
 			}
 
 			if (!File.Exists(path))
