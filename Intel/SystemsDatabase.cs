@@ -25,9 +25,17 @@ internal sealed class SystemsDatabase
 
 	public bool Has(string name) => _byName.ContainsKey((name ?? "").Trim());
 
+	/// <summary>매칭이 얼마나 신뢰할 수 있는지 — IntelParser의 통합 후보 채점이 코드형/정확
+	/// 일치와 오타 허용 퍼지 매칭을 다른 신뢰도로 다루기 위해 구분한다. 퍼지 매칭은 캐릭터
+	/// 성씨 등과 우연히 겹칠 수 있어(예: "Aihaken"→"Airaken") 신뢰도가 낮다.</summary>
+	public enum MatchConfidence { Exact, CodePrefix, Fuzzy }
+
 	/// <summary>정확 일치 우선, 널섹 코드형 토큰은 유일 prefix 매칭, 일반 이름은 오타 허용 퍼지 매칭.</summary>
-	public string? MatchName(string token)
+	public string? MatchName(string token) => MatchName(token, out _);
+
+	public string? MatchName(string token, out MatchConfidence confidence)
 	{
+		confidence = MatchConfidence.Exact;
 		token = (token ?? "").Trim();
 		if (token.Length == 0) return null;
 		if (_byName.TryGetValue(token, out SystemInfo? exact))
@@ -36,6 +44,7 @@ internal sealed class SystemsDatabase
 		bool codeLike = token.IndexOf('-') >= 0 || token.Any(char.IsDigit);
 		if (codeLike && token.Length >= 3)
 		{
+			confidence = MatchConfidence.CodePrefix;
 			string? unique = null;
 			foreach (var kv in _byName)
 			{
@@ -50,6 +59,7 @@ internal sealed class SystemsDatabase
 			return null;
 		}
 
+		confidence = MatchConfidence.Fuzzy;
 		return FuzzyMatchName(token);
 	}
 

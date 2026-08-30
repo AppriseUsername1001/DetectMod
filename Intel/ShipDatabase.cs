@@ -41,8 +41,15 @@ internal sealed class ShipDatabase
 		return _byName.Count;
 	}
 
-	public string? Resolve(string token)
+	/// <summary>매칭 신뢰도 — IntelParser의 통합 후보 채점이 정확/별칭/복수형 일치와 오타 허용
+	/// 퍼지 매칭을 다른 신뢰도로 다루기 위해 구분한다.</summary>
+	public enum MatchConfidence { Exact, Fuzzy }
+
+	public string? Resolve(string token) => Resolve(token, out _);
+
+	public string? Resolve(string token, out MatchConfidence confidence)
 	{
+		confidence = MatchConfidence.Exact;
 		token = (token ?? "").Trim();
 		if (token.Length == 0) return null;
 		if (_byName.TryGetValue(token, out string? name))
@@ -58,6 +65,7 @@ internal sealed class ShipDatabase
 			if (_aliases.TryGetValue(stem, out viaAlias))
 				return viaAlias;
 		}
+		confidence = MatchConfidence.Fuzzy;
 		return FuzzyResolve(token);
 	}
 

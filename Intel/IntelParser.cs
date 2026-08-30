@@ -197,116 +197,64 @@ internal static class IntelParser
 		string? questionType = Questions.TryGetValue(questionKey, out string? qt) ? qt : null;
 
 		string[] rawTokens = message.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-		var used = new bool[rawTokens.Length];
+
+		// 통합 후보 채점: 모든 (시작,길이 1~3) 구간에 대해 성계/함선/캐릭터 세 가지 해석을
+		// 모두 점수로 매겨두고, 한 번의 DP로 줄 전체에서 겹치지 않는 최선의 조합 하나를
+		// 고른다. 예전엔 성계·함선을 먼저 그리디하게 확정한 뒤 남는 토큰만 캐릭터 DP에
+		// 넘기고, 성계/함선이 캐릭터 이름을 가로챈 특정 사례(예: "Corto Aihaken"의
+		// "Aihaken"이 실제 성계 "Airaken"과 퍼지매칭됨, "Star Maelstrom"의 "Maelstrom"이
+		// 실제 전함명과 겹침)마다 별도의 "되돌리기" 패치를 추가해왔다 — 이제는 애초에
+		// 하나의 점수 체계 안에서 경쟁시켜, 확실한 매칭(코드형/정확 성계명, 정확 함선명)은
+		// 여전히 항상 이기고, 불확실한 매칭(퍼지, 괄호 표기 없이 다른 함선 옆에 홑토큰으로
+		// 잡힌 함선)만 강한 캐릭터 후보에 자연스럽게 밀리도록 한다.
+		var (winners, n) = SelectBestTokenization(rawTokens, speaker, systems, ships, chars);
+
+		var used = new bool[n];
 		var foundSystems = new List<string>();
-		var foundShips = new List<string>();
 		var systemHits = new List<(int start, int len, string name)>();
-		var shipHits = new List<(int start, int len, string name, string display)>();
 		var sysSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var foundChars = new List<string>();
+		var charSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var shipWinners = new List<(int start, int len, string name)>();
+
+		foreach (var (start, len, cand) in winners)
+		{
+			MarkUsed(used, start, len);
+			switch (cand.Kind)
+			{
+				case SpanKind.System:
+					systemHits.Add((start, len, cand.Value));
+					if (sysSeen.Add(cand.Value)) foundSystems.Add(cand.Value);
+					break;
+				case SpanKind.Ship:
+					shipWinners.Add((start, len, cand.Value));
+					break;
+				case SpanKind.Character:
+					bool accept = chars?.AcceptAsCharacter(cand.Value) ?? true;
+					if (accept && charSeen.Add(cand.Value))
+					{
+						foundChars.Add(cand.Value);
+						chars?.Enqueue(cand.Value);
+					}
+					break;
+			}
+		}
+
+		// 함선 인접 수량("2x"/"x2"/"=15") 소비는 다른 모든 승자의 used[]가 이미 반영된
+		// 뒤에 해야, 엉뚱하게 다른 승자 구간의 토큰을 수량으로 잘못 먹지 않는다.
+		var foundShips = new List<string>();
 		var shipSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-		// Longest-first multi-token match for systems then ships (3..1)
-		for (int len = 3; len >= 1; len--)
+		foreach (var (start, len, name) in shipWinners)
 		{
-			for (int i = 0; i <= rawTokens.Length - len; i++)
-			{
-				if (RangeUsed(used, i, len)) continue;
-				string phrase = JoinTokens(rawTokens, i, len);
-				if (IsNoiseToken(phrase)) continue;
-
-				string? sys = systems.MatchName(phrase);
-				if (sys is not null)
-				{
-					if (sysSeen.Add(sys))
-						foundSystems.Add(sys);
-					systemHits.Add((i, len, sys));
-					MarkUsed(used, i, len);
-					continue;
-				}
-
-				string? ship = len == 1 ? ships.Resolve(CleanToken(rawTokens[i])) : ships.Resolve(phrase);
-				if (ship is not null)
-				{
-					MarkUsed(used, i, len);
-					int? qty = TryConsumeAdjacentQty(rawTokens, used, i, len);
-					string display = qty is int n && n > 1 ? $"{ship} x{n}" : ship;
-					shipHits.Add((i, len, ship, display));
-					if (shipSeen.Add(ship))
-						foundShips.Add(display);
-				}
-			}
-		}
-
-		// 성계 매칭은 코드형(대시/숫자 포함, 예: "ZA0L-U") 토큰과 평범한 단어형 성계명(예:
-		// "Aihaken")을 구분 없이 그리디하게 처리한다 — 그런데 "Corto Aihaken"처럼 캐릭터의
-		// 성(姓)이 우연히 실존하는(평범한 이름의) 성계명과 겹치면, 그 성계 매칭이 캐릭터 이름을
-		// 통째로 갈라놓고 심지어 "가장 가까운 성계" 로직에서 진짜 보고된 성계를 밀어내기까지
-		// 한다. 같은 줄에 이미 코드형 성계가 따로 있다면(=진짜 위치 보고는 이미 확보됨) 그 옆에
-		// 아직 안 쓰인 Title Case 단어가 붙어있는 단어형 성계 매칭은 캐릭터 이름의 일부일 가능성이
-		// 훨씬 높다고 보고 되돌려, 뒤이은 캐릭터 후보 분할이 그 토큰을 다시 쓸 수 있게 한다.
-		if (systemHits.Count > 1 && systemHits.Any(h => IsCodeLikeSystemToken(rawTokens[h.start])))
-		{
-			for (int hi = systemHits.Count - 1; hi >= 0; hi--)
-			{
-				var hit = systemHits[hi];
-				if (hit.len != 1 || IsCodeLikeSystemToken(rawTokens[hit.start]))
-					continue;
-
-				bool adjacentTitleCase =
-					(hit.start > 0 && !used[hit.start - 1] &&
-					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start - 1]))) ||
-					(hit.start + 1 < rawTokens.Length && !used[hit.start + 1] &&
-					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start + 1])));
-				if (!adjacentTitleCase) continue;
-
-				used[hit.start] = false;
-				systemHits.RemoveAt(hi);
-				if (!systemHits.Exists(h => string.Equals(h.name, hit.name, StringComparison.OrdinalIgnoreCase)))
-				{
-					foundSystems.RemoveAll(s => string.Equals(s, hit.name, StringComparison.OrdinalIgnoreCase));
-					sysSeen.Remove(hit.name);
-				}
-			}
-		}
-
-		// 함선 매칭도 같은 이유로 캐릭터 이름을 가로챌 수 있다 — 예: "Star Maelstrom (Prospect)"에서
-		// "Maelstrom"은 캐릭터의 성(姓)이지만 동시에 실제 전함 이름이기도 하다. "(ShipName)" 괄호
-		// 표기는 EVE 인텔 채널에서 함선을 명시하는 흔한 관용구라 신뢰도가 높다 — 그런 괄호 표기
-		// 함선이 같은 줄에 따로 있다면(=진짜 함선 정보는 이미 확보됨), 괄호 없이 홑토큰으로 잡힌
-		// 다른 함선 매칭이 아직 안 쓰인 Title Case 단어 옆에 붙어있을 때 캐릭터 이름의 일부일
-		// 가능성이 더 높다고 보고 되돌린다.
-		if (shipHits.Count > 1 && shipHits.Any(h => IsParenthesizedToken(rawTokens, h.start, h.len)))
-		{
-			for (int hi = shipHits.Count - 1; hi >= 0; hi--)
-			{
-				var hit = shipHits[hi];
-				if (hit.len != 1 || IsParenthesizedToken(rawTokens, hit.start, hit.len))
-					continue;
-
-				bool adjacentTitleCase =
-					(hit.start > 0 && !used[hit.start - 1] &&
-					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start - 1]))) ||
-					(hit.start + 1 < rawTokens.Length && !used[hit.start + 1] &&
-					 CharacterResolver.IsTitleCaseName(CleanToken(rawTokens[hit.start + 1])));
-				if (!adjacentTitleCase) continue;
-
-				used[hit.start] = false;
-				shipHits.RemoveAt(hi);
-				if (!shipHits.Exists(h => string.Equals(h.name, hit.name, StringComparison.OrdinalIgnoreCase)))
-				{
-					foundShips.RemoveAll(s => string.Equals(s, hit.display, StringComparison.OrdinalIgnoreCase));
-					shipSeen.Remove(hit.name);
-				}
-			}
+			int? qty = TryConsumeAdjacentQty(rawTokens, used, start, len);
+			string display = qty is int q && q > 1 ? $"{name} x{q}" : name;
+			if (shipSeen.Add(name)) foundShips.Add(display);
 		}
 
 		(string system, bool isAnsiblex)? gate = TryFindGate(rawTokens, used, systemHits);
 		(string verb, string system, bool isGate)? movement = TryFindMovement(rawTokens, used, systemHits, gate);
 		(int count, bool isPlus, bool isExact)? hostileCount = TryFindStandaloneHostileCount(rawTokens, used);
 
-		// Character candidates from remaining tokens (1..3 word windows); skip speaker
-		var foundChars = new List<string>();
-		var charSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (isClear)
 		{
 			return new ParsedIntelLine
@@ -321,18 +269,6 @@ internal static class IntelParser
 				IsQuestion = questionType is not null,
 				QuestionType = questionType
 			};
-		}
-		foreach (var (start, len) in SegmentCharacterCandidates(rawTokens, used, speaker, systems, ships, chars))
-		{
-			string phrase = JoinTokens(rawTokens, start, len);
-			bool accept = chars?.AcceptAsCharacter(phrase) ?? true;
-			if (!accept) continue;
-			if (charSeen.Add(phrase))
-			{
-				foundChars.Add(phrase);
-				chars?.Enqueue(phrase);
-			}
-			MarkUsed(used, start, len);
 		}
 
 		return new ParsedIntelLine
@@ -368,14 +304,6 @@ internal static class IntelParser
 		return false;
 	}
 
-	/// <summary>SystemsDatabase.MatchName의 codeLike 판정과 동일한 기준(대시 또는 숫자 포함)을
-	/// 정리된 토큰 기준으로 재사용 — 널섹/웜홀식 성계 코드는 캐릭터 성씨와 겹칠 일이 없다.</summary>
-	private static bool IsCodeLikeSystemToken(string rawToken)
-	{
-		string t = CleanToken(rawToken);
-		return t.IndexOf('-') >= 0 || t.Any(char.IsDigit);
-	}
-
 	/// <summary>토큰 범위가 "(...)" 괄호로 감싸여 있는지 — EVE 인텔 채널의 "Name (ShipType)" 관용구
 	/// 함선 표기를 원본(정리 전) 토큰 기준으로 판별한다.</summary>
 	private static bool IsParenthesizedToken(string[] rawTokens, int start, int len)
@@ -405,125 +333,191 @@ internal static class IntelParser
 		return s;
 	}
 
+	private enum SpanKind { System, Ship, Character }
+
+	private readonly struct SpanCandidate
+	{
+		public readonly SpanKind Kind;
+		public readonly string Value;
+		public readonly int Score;
+		public SpanCandidate(SpanKind kind, string value, int score) { Kind = kind; Value = value; Score = score; }
+	}
+
+	// 확실한(코드형/정확) 성계·함선 매칭은 사실상 항상 이기도록 길이당 매우 큰 점수를 준다 —
+	// 캐릭터 최고 등급(길이당 100,000)보다도 한 자릿수 위라, 정말 명백한 매칭은 어떤 캐릭터
+	// 후보와 경쟁해도 흔들리지 않는다.
+	private const int DominantScorePerLen = 1_000_000;
+	// 불확실한(퍼지 매칭, 혹은 다른 함선이 괄호로 명시된 줄에서 홑토큰으로만 잡힌) 성계·함선
+	// 매칭 — 약한 캐릭터 추측(0등급, 80점)보다는 위지만, 온전한 2단어 캐릭터 후보(2등급,
+	// 길이 2 기준 1500점)에는 확실히 밀리도록 잡은 값. "Corto Aihaken"/"Star Maelstrom"류
+	// 충돌을 예전처럼 별도 패치 없이 이 점수 하나로 해결한다.
+	private const int UncertainMatchScore = 900;
+
 	/// <summary>
-	/// 남은(미사용) 토큰들을 캐릭터 이름 후보로 최적 분할한다 (DP).
-	/// 탐욕적 최장일치 방식은 "JIM 01 JIM 02"(두 캐릭터) 같은 줄을 "JIM 01 JIM"(엉터리 한 덩어리) + "02"(버려짐)로
-	/// 잘못 묶는 문제가 있었음 — RIFT처럼 여러 분할 후보에 점수를 매겨 가장 나은 조합을 선택하도록 교체.
-	/// 점수: ESI로 실존 확인된 이름 > 2~3단어 조합(미확인) > 1단어(미확인) > (건너뜀). 확인된 비존재 이름은 제외.
+	/// 줄 전체에서 성계·함선·캐릭터 세 가지 해석을 하나의 점수 체계로 통합 채점하고, DP로
+	/// 겹치지 않는 최선의 조합(=최적 토큰화) 하나를 고른다. RIFT Intel Fusion Tool의 "여러
+	/// 후보 파싱을 만들고 우선순위로 하나를 고른다"는 접근에서 아이디어를 얻었지만(그쪽 소스는
+	/// 라이선스가 없어 코드를 참고하지 않았고, GitLab 공개 저장소에서 상위 수준 알고리즘만
+	/// 확인) 구현은 독립적 — 우리는 후보 집합을 전부 만드는 대신, 구간별 최고 점수 하나만
+	/// 남겨 기존 DP 구조를 그대로 재사용한다.
 	/// </summary>
-	private static List<(int start, int len)> SegmentCharacterCandidates(
-		string[] rawTokens, bool[] used, string speaker, SystemsDatabase systems, ShipDatabase ships, CharacterResolver? chars)
+	private static (List<(int start, int len, SpanCandidate cand)> winners, int n) SelectBestTokenization(
+		string[] rawTokens, string speaker, SystemsDatabase systems, ShipDatabase ships, CharacterResolver? chars)
 	{
 		int n = rawTokens.Length;
-		var segScore = new int?[n, 4]; // [start, len] len=1..3
+
+		// 1단계: 함선의 원(raw) 매칭 정보를 먼저 전부 모아, 줄 안에 "(ShipName)" 괄호로
+		// 명시된 함선이 하나라도 있는지 미리 판정한다 — 있으면 그 외의 홑토큰 함선 매칭은
+		// 신뢰도를 낮춰서(아래 2단계) 강한 캐릭터 후보에 밀릴 여지를 준다.
+		var rawShipMatch = new (string name, ShipDatabase.MatchConfidence conf)?[n, 4];
+		bool anyParenShip = false;
 		for (int i = 0; i < n; i++)
 		{
 			for (int len = 1; len <= 3 && i + len <= n; len++)
 			{
-				if (RangeUsed(used, i, len)) continue;
-				string phrase = JoinTokens(rawTokens, i, len);
-				if (IsNoiseToken(phrase)) continue;
-				if (!CharacterResolver.LooksLikeCharacterName(phrase)) continue;
-				if (string.Equals(phrase, speaker, StringComparison.OrdinalIgnoreCase)) continue;
-				if (systems.MatchName(phrase) is not null) continue;
-				if (ships.Resolve(phrase) is not null) continue;
-
-				CharResolveStatus status = chars?.GetStatus(phrase) ?? CharResolveStatus.Unknown;
-				if (status == CharResolveStatus.DoesNotExist) continue;
-				// ESI로 아직 미확인인 후보는 Title Case(단어별 대문자 시작)일 때만 점수를 준다.
-				// RIFT가 영단어 사전으로 걸러내는 "평범한 소문자 문장 조각"을 우리는 이 방식으로 배제 —
-				// 이미 실존 확인된(Exists) 이름은 신뢰할 수 있으므로 그대로 통과. 예외 둘 다 len==1로
-				// 한정하는 이유: 2~3단어 조합까지 허용하면 "nv planet 7"처럼 평범한 소문자 문구까지
-				// 통과해버린다(실제로 있었던 회귀).
-				//   1) 숫자가 섞인 한 단어("heqiya3" 같은 부계정/알트 이름 흔한 패턴)는 평범한
-				//      영단어일 수 없으므로 통과.
-				//   2) 첫 글자 이후에 대문자가 섞인 한 단어("xxxGshankxxx" 같은 게이머 태그 스타일
-				//      꾸밈 표기)도 마찬가지로 평범한 영어 문장 조각에선 나타나지 않는 패턴이라 통과.
-				//      ("whereismyspacebar"처럼 순수 소문자만인 단어는 이 예외에 안 걸린다 — 길이
-				//      기준을 넣어보려 했지만 "everything"/"whatever"/"immediately"류 흔한 영단어도
-				//      전부 실제 EVE 캐릭터로 이미 존재해서(ESI로 직접 확인) DoesNotExist로 자동
-				//      걸러지지도 않는 영구 오탐 위험이 있어 포기함 — 알려진 한계로 남겨둠.)
-				if (status != CharResolveStatus.Exists && !CharacterResolver.IsTitleCaseName(phrase)
-					&& !(len == 1 && phrase.Any(char.IsDigit))
-					&& !(len == 1 && phrase.Skip(1).Any(char.IsUpper)))
-					continue;
-
-				// 점수 등급을 완전히 분리된 구간으로 둔다 (겹치면 아래에서 설명하는 역전 버그가 남는다):
-				//   3등급(가장 신뢰): len단어 조합 자체가 ESI로 실존 확인됨      → 100000×len
-				//   2등급:            len>1, Title Case, 조합은 아직 미확인      → 1000×(len-1) + 500
-				//   1등급:            단일 단어가 ESI로 실존 확인됨              →   1000 (len=1 전용)
-				//   0등급:            그 외 미확인 Title Case 후보(단일 단어뿐)   →   80
-				if (status == CharResolveStatus.Exists && len > 1)
-				{
-					segScore[i, len] = 100_000 * len;
-					continue;
-				}
-				if (len > 1 && status == CharResolveStatus.Unknown)
-				{
-					// 아직 이 조합 자체("Prime Dallocort")로는 ESI에 물어본 적이 없다 — 백그라운드로
-					// 큐에 넣어 결과를 캐시에 쌓는다. 나중에 이 조합이 실존 확인되면 위 3등급으로
-					// 넘어가 확실히 이기고, "존재 안 함"으로 확인되면 위의 DoesNotExist continue에
-					// 걸려 자동으로 개별 단어 분리로 복귀한다.
-					chars?.Enqueue(phrase);
-
-					// "Erador Sul"처럼 단어 하나만 우연히 다른 실존 캐릭터와 겹치는 경우엔 병합을
-					// 우선(합산 최악값 1000×(len-1)+80보다 이 점수가 항상 높음)하되, "Bastilia
-					// Neekee"처럼 단어 둘 다 각각 이미 다른 실존 캐릭터로 확인된 경우는 오히려 분리를
-					// 기본값으로 둔다(합산 1000×len이 이 점수보다 항상 높음) — 사용자 판단: 이
-					// 시그널(조합 미확인 + 부분 일치)만으론 "우연히 겹치는 두 사람"과 "진짜 2단어
-					// 이름인데 각 부분도 따로 실존"을 구분할 수 없고(Prime Dallocort는 후자, Bastilia
-					// Neekee는 전자 — 둘 다 ESI로 직접 확인됨), 첫 등장에 잘못 합쳐서 서로 다른 두
-					// 사람을 한 명으로 보이게 하는 쪽이 더 나쁘다고 판단해 분리를 기본값으로 선택함.
-					// 조합 자체가 ESI로 실존 확인되면(위 3등급) 다음 등장부터는 정확히 병합된다.
-					segScore[i, len] = 1000 * (len - 1) + 500;
-					continue;
-				}
-
-				// len == 1만 여기 도달 (len>1은 위에서 3/2b/2a등급으로 이미 전부 처리됨).
-				segScore[i, len] = status == CharResolveStatus.Exists ? 1000 : 80;
+				string phrase0 = JoinTokens(rawTokens, i, len);
+				if (IsNoiseToken(phrase0)) continue;
+				string? ship = len == 1
+					? ships.Resolve(CleanToken(rawTokens[i]), out var conf)
+					: ships.Resolve(phrase0, out conf);
+				if (ship is null) continue;
+				rawShipMatch[i, len] = (ship, conf);
+				if (IsParenthesizedToken(rawTokens, i, len)) anyParenShip = true;
 			}
 		}
 
-		var best = new int[n + 1];
+		// 2단계: 구간별 최종 후보 — 성계/함선/캐릭터 중 가장 높은 점수 하나만 남긴다.
+		var cell = new SpanCandidate?[n, 4];
+		for (int i = 0; i < n; i++)
+		{
+			for (int len = 1; len <= 3 && i + len <= n; len++)
+			{
+				string phrase = JoinTokens(rawTokens, i, len);
+				if (IsNoiseToken(phrase)) continue;
+
+				SpanCandidate? best = null;
+
+				string? sys = systems.MatchName(phrase, out var sysConf);
+				if (sys is not null)
+				{
+					int score = sysConf == SystemsDatabase.MatchConfidence.Fuzzy
+						? UncertainMatchScore
+						: DominantScorePerLen * len;
+					best = new SpanCandidate(SpanKind.System, sys, score);
+				}
+
+				if (rawShipMatch[i, len] is (string shipName, ShipDatabase.MatchConfidence shipConf))
+				{
+					bool downgrade = len == 1 && shipConf != ShipDatabase.MatchConfidence.Fuzzy &&
+						anyParenShip && !IsParenthesizedToken(rawTokens, i, len);
+					int score = (shipConf == ShipDatabase.MatchConfidence.Fuzzy || downgrade)
+						? UncertainMatchScore
+						: DominantScorePerLen * len;
+					if (best is null || score > best.Value.Score)
+						best = new SpanCandidate(SpanKind.Ship, shipName, score);
+				}
+
+				if (TryScoreCharacterCandidate(i, len, phrase, speaker, chars) is int charScore &&
+					(best is null || charScore > best.Value.Score))
+					best = new SpanCandidate(SpanKind.Character, phrase, charScore);
+
+				cell[i, len] = best;
+			}
+		}
+
+		// 3단계: 예전 캐릭터 전용 DP와 동일한 구조의 구간분할 DP — 이제 세 종류 후보 전체를
+		// 대상으로 줄 전체에서 겹치지 않는 최고 점수 조합을 고른다.
+		var best2 = new int[n + 1];
 		var choiceLen = new int[n + 1];
 		for (int end = 1; end <= n; end++)
 		{
-			int bestScore = best[end - 1] - 1; // 건너뛰기(이 토큰은 캐릭터 아님) — 약한 페널티로 커버리지를 우선
+			int bestScore = best2[end - 1] - 1; // 건너뛰기(아무 것도 아님) — 약한 페널티로 커버리지를 우선
 			int bestLen = 0;
 			for (int len = 1; len <= 3 && len <= end; len++)
 			{
 				int start = end - len;
-				if (segScore[start, len] is int s)
+				if (cell[start, len] is SpanCandidate c)
 				{
-					int total = best[start] + s;
-					if (total > bestScore)
-					{
-						bestScore = total;
-						bestLen = len;
-					}
+					int total = best2[start] + c.Score;
+					if (total > bestScore) { bestScore = total; bestLen = len; }
 				}
 			}
-			best[end] = bestScore;
+			best2[end] = bestScore;
 			choiceLen[end] = bestLen;
 		}
 
-		var result = new List<(int start, int len)>();
+		var winners = new List<(int start, int len, SpanCandidate cand)>();
 		int pos = n;
 		while (pos > 0)
 		{
 			int len = choiceLen[pos];
-			if (len == 0)
-			{
-				pos -= 1;
-			}
-			else
-			{
-				result.Add((pos - len, len));
-				pos -= len;
-			}
+			if (len == 0) { pos -= 1; continue; }
+			winners.Add((pos - len, len, cell[pos - len, len]!.Value));
+			pos -= len;
 		}
-		result.Reverse();
-		return result;
+		winners.Reverse();
+		return (winners, n);
+	}
+
+	/// <summary>캐릭터 후보 점수 계산 — 기존 SegmentCharacterCandidates의 채점 로직을 그대로
+	/// 유지한다(이 세션에서 여러 실제 오탐 사례로 다듬어진 부분이라 재검증 없이 재사용).
+	/// 예전과 달리 이 구간이 성계·함선으로도 매칭되는지는 더 이상 여기서 배제하지 않는다 —
+	/// 통합 DP가 점수로 알아서 경쟁시킨다.</summary>
+	private static int? TryScoreCharacterCandidate(int i, int len, string phrase, string speaker, CharacterResolver? chars)
+	{
+		if (!CharacterResolver.LooksLikeCharacterName(phrase)) return null;
+		if (string.Equals(phrase, speaker, StringComparison.OrdinalIgnoreCase)) return null;
+
+		CharResolveStatus status = chars?.GetStatus(phrase) ?? CharResolveStatus.Unknown;
+		if (status == CharResolveStatus.DoesNotExist) return null;
+		// ESI로 아직 미확인인 후보는 Title Case(단어별 대문자 시작)일 때만 점수를 준다.
+		// RIFT가 영단어 사전으로 걸러내는 "평범한 소문자 문장 조각"을 우리는 이 방식으로 배제 —
+		// 이미 실존 확인된(Exists) 이름은 신뢰할 수 있으므로 그대로 통과. 예외 둘 다 len==1로
+		// 한정하는 이유: 2~3단어 조합까지 허용하면 "nv planet 7"처럼 평범한 소문자 문구까지
+		// 통과해버린다(실제로 있었던 회귀).
+		//   1) 숫자가 섞인 한 단어("heqiya3" 같은 부계정/알트 이름 흔한 패턴)는 평범한
+		//      영단어일 수 없으므로 통과.
+		//   2) 첫 글자 이후에 대문자가 섞인 한 단어("xxxGshankxxx" 같은 게이머 태그 스타일
+		//      꾸밈 표기)도 마찬가지로 평범한 영어 문장 조각에선 나타나지 않는 패턴이라 통과.
+		//      ("whereismyspacebar"처럼 순수 소문자만인 단어는 이 예외에 안 걸린다 — 길이
+		//      기준을 넣어보려 했지만 "everything"/"whatever"/"immediately"류 흔한 영단어도
+		//      전부 실제 EVE 캐릭터로 이미 존재해서(ESI로 직접 확인) DoesNotExist로 자동
+		//      걸러지지도 않는 영구 오탐 위험이 있어 포기함 — 알려진 한계로 남겨둠.)
+		if (status != CharResolveStatus.Exists && !CharacterResolver.IsTitleCaseName(phrase)
+			&& !(len == 1 && phrase.Any(char.IsDigit))
+			&& !(len == 1 && phrase.Skip(1).Any(char.IsUpper)))
+			return null;
+
+		// 점수 등급을 완전히 분리된 구간으로 둔다 (겹치면 역전 버그가 남는다):
+		//   3등급(가장 신뢰): len단어 조합 자체가 ESI로 실존 확인됨      → 100000×len
+		//   2등급:            len>1, Title Case, 조합은 아직 미확인      → 1000×(len-1) + 500
+		//   1등급:            단일 단어가 ESI로 실존 확인됨              →   1000 (len=1 전용)
+		//   0등급:            그 외 미확인 Title Case 후보(단일 단어뿐)   →   80
+		if (status == CharResolveStatus.Exists && len > 1)
+			return 100_000 * len;
+
+		if (len > 1 && status == CharResolveStatus.Unknown)
+		{
+			// 아직 이 조합 자체("Prime Dallocort")로는 ESI에 물어본 적이 없다 — 백그라운드로
+			// 큐에 넣어 결과를 캐시에 쌓는다. 나중에 이 조합이 실존 확인되면 위 3등급으로
+			// 넘어가 확실히 이기고, "존재 안 함"으로 확인되면 위의 DoesNotExist에 걸려
+			// 자동으로 개별 단어 분리로 복귀한다.
+			chars?.Enqueue(phrase);
+
+			// "Erador Sul"처럼 단어 하나만 우연히 다른 실존 캐릭터와 겹치는 경우엔 병합을
+			// 우선(합산 최악값 1000×(len-1)+80보다 이 점수가 항상 높음)하되, "Bastilia
+			// Neekee"처럼 단어 둘 다 각각 이미 다른 실존 캐릭터로 확인된 경우는 오히려 분리를
+			// 기본값으로 둔다(합산 1000×len이 이 점수보다 항상 높음) — 사용자 판단: 이
+			// 시그널(조합 미확인 + 부분 일치)만으론 "우연히 겹치는 두 사람"과 "진짜 2단어
+			// 이름인데 각 부분도 따로 실존"을 구분할 수 없고(Prime Dallocort는 후자, Bastilia
+			// Neekee는 전자 — 둘 다 ESI로 직접 확인됨), 첫 등장에 잘못 합쳐서 서로 다른 두
+			// 사람을 한 명으로 보이게 하는 쪽이 더 나쁘다고 판단해 분리를 기본값으로 선택함.
+			// 조합 자체가 ESI로 실존 확인되면(위 3등급) 다음 등장부터는 정확히 병합된다.
+			return 1000 * (len - 1) + 500;
+		}
+
+		// len == 1만 여기 도달 (len>1은 위에서 3/2등급으로 이미 전부 처리됨).
+		return status == CharResolveStatus.Exists ? 1000 : 80;
 	}
 
 	/// <summary>함선 매칭 앞/뒤 토큰에서 "2x", "x2", "2*", "=15" 같은 수량 표기를 찾아 소비한다 (RIFT류 척수 인식).</summary>
@@ -663,13 +657,6 @@ internal static class IntelParser
 			DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime dt))
 			return dt;
 		return null;
-	}
-
-	private static bool RangeUsed(bool[] used, int start, int len)
-	{
-		for (int i = start; i < start + len; i++)
-			if (used[i]) return true;
-		return false;
 	}
 
 	private static void MarkUsed(bool[] used, int start, int len)
