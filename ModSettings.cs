@@ -27,7 +27,10 @@ internal sealed class ModSettings
 
 	public int JumpRange { get; set; } = 4;
 	public string? ChatlogsDir { get; set; }
-	public string? IntelChannel { get; set; }
+	/// <summary>기본 인텔 감지 채널 — 새로 설치하는 콥원도 별도 설정 없이 바로 감지되도록
+	/// corp 공용 인텔 채널로 미리 채워둠. 이미 이 필드가 저장돼 있던 기존 사용자는(설정 파일에
+	/// 값이 있으므로) 이 기본값의 영향을 받지 않고 자기 값을 그대로 유지한다.</summary>
+	public string? IntelChannel { get; set; } = "wc.Dek+Fa+PB";
 	public bool AlertSoundEnabled { get; set; } = true;
 	public string? AlertSoundPath { get; set; }
 	/// <summary>0~100. 알림음 재생 볼륨.</summary>
